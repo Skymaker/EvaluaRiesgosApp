@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import bcrypt from "bcryptjs";
+import nodemailer from "nodemailer";
 import { Pool } from "pg";
 
 const app = express();
@@ -9,6 +10,62 @@ const PORT = Number(process.env.PORT || 4000);
 const DATABASE_URL = process.env.DATABASE_URL;
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
 const HORAS_EXPIRACION_SESION = 24;
+const APP_PUBLIC_NAME = process.env.APP_PUBLIC_NAME || "Sistema de Evaluación de Riesgos";
+
+function smtpConfigured() {
+  return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+}
+
+function createMailTransport() {
+  const port = Number(process.env.SMTP_PORT || 587);
+  const secure = process.env.SMTP_SECURE === "true" || port === 465;
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port,
+    secure,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
+}
+
+function generateTemporaryPassword() {
+  const bytes = new Uint8Array(12);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
+}
+
+async function sendAdminLockoutRecoveryEmail({ to, nombre, username, temporaryPassword }) {
+  const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const transporter = createMailTransport();
+  const subject = `${APP_PUBLIC_NAME} — contraseña temporal`;
+  const text = `Hola ${nombre},
+
+Se han superado los intentos de inicio de sesión permitidos para la cuenta de administrador "${username}".
+
+Su contraseña temporal es: ${temporaryPassword}
+
+Al iniciar sesión deberá cambiar esta contraseña por una nueva.
+
+Si no ha sido usted quien ha intentado acceder, contacte de inmediato con el responsable del sistema.`;
+
+  const html = `<p>Hola <strong>${escapeHtml(nombre)}</strong>,</p>
+<p>Se han superado los intentos de inicio de sesión permitidos para la cuenta de administrador <strong>${escapeHtml(username)}</strong>.</p>
+<p>Su contraseña temporal es: <code style="font-size:1.1em">${escapeHtml(temporaryPassword)}</code></p>
+<p>Al iniciar sesión deberá <strong>cambiar esta contraseña</strong> por una nueva.</p>
+<p>Si no ha sido usted quien ha intentado acceder, contacte de inmediato con el responsable del sistema.</p>`;
+
+  await transporter.sendMail({ from, to, subject, text, html });
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
 
 if (!DATABASE_URL) {
   throw new Error("DATABASE_URL is required");
@@ -30,6 +87,7 @@ function shapeUser(row) {
     role: row.rol,
     isBlocked: row.esta_bloqueado,
     failedAttempts: row.intentos_fallidos,
+    mustChangePassword: row.requiere_cambio_contrasena,
     createdAt: row.creado_en,
     lastLogin: row.ultimo_acceso,
   };
@@ -91,9 +149,14 @@ async function runMigrations() {
       rol text not null check (rol in ('administrador','administrativo','tecnico')),
       esta_bloqueado boolean not null default false,
       intentos_fallidos int not null default 0,
+      requiere_cambio_contrasena boolean not null default false,
       creado_en text not null,
       ultimo_acceso text
     );
+  `);
+  await pool.query(`
+    alter table usuarios
+    add column if not exists requiere_cambio_contrasena boolean not null default false;
   `);
 
   await pool.query(`
@@ -214,6 +277,56 @@ app.post("/autenticacion/iniciar-sesion", async (req, res) => {
   if (!valid) {
     const attempts = user.intentos_fallidos + 1;
     const isBlocked = attempts >= 3;
+
+    if (user.rol === "administrador" && isBlocked) {
+      if (!smtpConfigured()) {
+        await pool.query(
+          "update usuarios set intentos_fallidos = $1, esta_bloqueado = true where id = $2",
+          [attempts, user.id],
+        );
+        return res.status(503).json({
+          code: "ADMIN_RECOVERY_SMTP_NOT_CONFIGURED",
+          message:
+            "El correo de recuperación no está configurado en el servidor. Contacte al administrador del sistema.",
+        });
+      }
+
+      const temporaryPassword = generateTemporaryPassword();
+      const tempHash = await bcrypt.hash(temporaryPassword, 10);
+      const oldHash = user.hash_contrasena;
+      const oldMustChange = Boolean(user.requiere_cambio_contrasena);
+
+      await pool.query(
+        `update usuarios set hash_contrasena = $1, intentos_fallidos = 0, esta_bloqueado = false, requiere_cambio_contrasena = true where id = $2`,
+        [tempHash, user.id],
+      );
+
+      try {
+        await sendAdminLockoutRecoveryEmail({
+          to: user.correo,
+          nombre: user.nombre_completo,
+          username: user.nombre_usuario,
+          temporaryPassword,
+        });
+      } catch (err) {
+        console.error("Error enviando correo de recuperación:", err);
+        await pool.query(
+          `update usuarios set hash_contrasena = $1, intentos_fallidos = $2, esta_bloqueado = true, requiere_cambio_contrasena = $3 where id = $4`,
+          [oldHash, attempts, oldMustChange, user.id],
+        );
+        return res.status(503).json({
+          code: "ADMIN_RECOVERY_EMAIL_FAILED",
+          message: "No se pudo enviar el correo de recuperación. Intente más tarde o contacte al soporte.",
+        });
+      }
+
+      return res.status(401).json({
+        code: "ADMIN_RECOVERY_EMAIL_SENT",
+        message:
+          "Se han superado los intentos permitidos. Se ha enviado una contraseña temporal a su correo. Deberá cambiarla al iniciar sesión.",
+      });
+    }
+
     await pool.query(
       "update usuarios set intentos_fallidos = $1, esta_bloqueado = $2 where id = $3",
       [attempts, isBlocked, user.id],
@@ -319,17 +432,32 @@ app.post("/usuarios/:id/cambiar-contrasena", async (req, res) => {
   if (!valid) {
     return res.status(401).json({ message: "La contraseña actual es incorrecta" });
   }
+  const sameAsPrevious = await bcrypt.compare(newPassword, existing.rows[0].hash_contrasena);
+  if (sameAsPrevious) {
+    return res.status(400).json({ message: "La nueva contraseña no puede ser igual a la anterior" });
+  }
   const passwordHash = await bcrypt.hash(newPassword, 10);
-  await pool.query("update usuarios set hash_contrasena = $1 where id = $2", [passwordHash, id]);
+  await pool.query(
+    "update usuarios set hash_contrasena = $1, requiere_cambio_contrasena = false where id = $2",
+    [passwordHash, id],
+  );
   res.json({ ok: true });
 });
 
 app.post("/usuarios/:id/desbloquear", async (req, res) => {
   const { id } = req.params;
-  await pool.query("update usuarios set esta_bloqueado = false, intentos_fallidos = 0 where id = $1", [id]);
+  const { temporaryPassword } = req.body ?? {};
+  if (!temporaryPassword || typeof temporaryPassword !== "string" || temporaryPassword.length < 6) {
+    return res.status(400).json({ message: "La contraseña temporal debe tener al menos 6 caracteres" });
+  }
+  const passwordHash = await bcrypt.hash(temporaryPassword, 10);
+  await pool.query(
+    "update usuarios set esta_bloqueado = false, intentos_fallidos = 0, hash_contrasena = $1, requiere_cambio_contrasena = true where id = $2",
+    [passwordHash, id],
+  );
   const user = await pool.query("select * from usuarios where id = $1", [id]);
   if (user.rowCount === 0) return res.status(404).json({ message: "Usuario no encontrado" });
-  res.json(shapeUser(user.rows[0]));
+  res.json({ user: shapeUser(user.rows[0]), temporaryPassword });
 });
 
 app.delete("/usuarios/:id", async (req, res) => {
@@ -586,85 +714,6 @@ app.post("/sistema/importar", async (req, res) => {
   } catch (error) {
     await client.query("rollback");
     res.status(500).json({ message: "No se pudo importar la información", error: String(error) });
-  } finally {
-    client.release();
-  }
-});
-
-app.post("/sistema/cargar-datos-prueba", async (req, res) => {
-  const { workCenters = [], evaluations = [], jobCategories = [] } = req.body ?? {};
-  const client = await pool.connect();
-  try {
-    await client.query("begin");
-    await client.query("delete from evaluaciones");
-    await client.query("delete from centros_trabajo");
-    await client.query("delete from categorias_puestos");
-
-    for (const center of workCenters) {
-      await client.query(
-        `insert into centros_trabajo (
-          id, nombre, direccion, ciudad, responsable, telefono, correo, numero_empleados, fecha_creacion,
-          estructura, estructura_jerarquica, puestos_trabajo
-        ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,$12::jsonb)`,
-        [
-          center.id,
-          center.nombre,
-          center.direccion,
-          center.ciudad,
-          center.responsable,
-          center.telefono,
-          center.email,
-          Number(center.numeroEmpleados || 0),
-          center.fechaCreacion,
-          JSON.stringify(center.estructura || []),
-          JSON.stringify(center.estructuraJerarquica || []),
-          JSON.stringify(center.puestosTrabajo || []),
-        ],
-      );
-    }
-
-    for (const category of jobCategories) {
-      await client.query(
-        `insert into categorias_puestos (id, nombre, descripcion, actividades, riesgos_genericos, epis_genericos, creado_en)
-         values ($1,$2,$3,$4::jsonb,$5::jsonb,$6::jsonb,$7)`,
-        [
-          category.id,
-          category.nombre,
-          category.descripcion,
-          JSON.stringify(category.actividades || []),
-          JSON.stringify(category.riesgosGenericos || []),
-          JSON.stringify(category.episGenericos || []),
-          category.createdAt || new Date().toISOString(),
-        ],
-      );
-    }
-
-    for (const evaluation of evaluations) {
-      await client.query(
-        `insert into evaluaciones (
-          id, centro_trabajo_id, nombre_centro_trabajo, fecha, evaluador, cargo, riesgos, riesgos_estructura, riesgos_puestos, observaciones, estado
-        ) values ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9::jsonb,$10,$11)`,
-        [
-          evaluation.id,
-          evaluation.workCenterId,
-          evaluation.workCenterName,
-          evaluation.fecha,
-          evaluation.evaluador,
-          evaluation.cargo,
-          JSON.stringify(evaluation.riesgos || []),
-          JSON.stringify(evaluation.riesgosEstructura || []),
-          JSON.stringify(evaluation.riesgosPuestos || []),
-          evaluation.observaciones || "",
-          evaluation.estado || "pendiente",
-        ],
-      );
-    }
-
-    await client.query("commit");
-    res.json({ ok: true });
-  } catch (error) {
-    await client.query("rollback");
-    res.status(500).json({ message: "No se pudieron cargar los datos de prueba", error: String(error) });
   } finally {
     client.release();
   }

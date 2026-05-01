@@ -1,24 +1,27 @@
-import { useEffect, useState, useRef } from 'react';
-import { Users, Plus, Trash2, Unlock, Shield, Mail, User as UserIcon, AlertTriangle, Download, Upload, Trash } from 'lucide-react';
+import React, { useEffect, useState, useRef } from 'react';
+import { Users, Plus, Trash2, Unlock, Shield, Mail, User as UserIcon, AlertTriangle, Download, Upload, Trash, Copy } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Badge } from './ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from './ui/alert-dialog';
 import { getUsers, saveUser, deleteUser, unlockUser, initializeUsers, refreshUsers } from '../utils/auth-storage';
 import { User, UserRole } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'sonner';
-import { SeedDataButton } from './SeedDataButton';
 import { apiRequest } from '../utils/api-client';
 
 export function UserManagement() {
   const { user: currentUser, logout } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [unlockUserTarget, setUnlockUserTarget] = useState<User | null>(null);
+  const [unlockTemporaryPassword, setUnlockTemporaryPassword] = useState('');
+  const [generatedTemporaryPassword, setGeneratedTemporaryPassword] = useState('');
+  const [unlockLoading, setUnlockLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState({
     username: '',
@@ -72,10 +75,30 @@ export function UserManagement() {
     toast.success('Usuario creado exitosamente');
   };
 
-  const handleUnlock = async (userId: string) => {
-    await unlockUser(userId);
-    await loadUsers();
-    toast.success('Usuario desbloqueado');
+  const handleUnlock = async () => {
+    if (!unlockUserTarget) return;
+    if (unlockTemporaryPassword.length < 6) {
+      toast.error('La contraseña temporal debe tener al menos 6 caracteres');
+      return;
+    }
+
+    setUnlockLoading(true);
+    try {
+      const temporaryPassword = await unlockUser(unlockUserTarget.id, unlockTemporaryPassword);
+      await loadUsers();
+      setGeneratedTemporaryPassword(temporaryPassword);
+      toast.success('Usuario desbloqueado');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo desbloquear el usuario');
+    } finally {
+      setUnlockLoading(false);
+    }
+  };
+
+  const copyTemporaryPassword = async () => {
+    if (!generatedTemporaryPassword) return;
+    await navigator.clipboard.writeText(generatedTemporaryPassword);
+    toast.success('Contraseña temporal copiada al portapapeles');
   };
 
   const handleDelete = async (userId: string) => {
@@ -196,21 +219,13 @@ export function UserManagement() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold text-gray-900">Gestión de Usuarios</h2>
-          <p className="text-gray-600 mt-1">Administra los usuarios del sistema</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <SeedDataButton />
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="flex items-center gap-2">
-                <Plus className="w-4 h-4" />
-                Nuevo Usuario
-              </Button>
-            </DialogTrigger>
-          <DialogContent>
+      <div>
+        <h2 className="text-2xl font-semibold text-gray-900">Gestión</h2>
+        <p className="text-gray-600 mt-1">Administra los datos y usuarios del sistema</p>
+      </div>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent>
             <DialogHeader>
               <DialogTitle>Crear Nuevo Usuario</DialogTitle>
               <DialogDescription>
@@ -289,17 +304,85 @@ export function UserManagement() {
                 <Button type="submit">Crear Usuario</Button>
               </DialogFooter>
             </form>
-          </DialogContent>
-        </Dialog>
-        </div>
-      </div>
+        </DialogContent>
+      </Dialog>
 
-      {/* Herramientas de Gestión de Datos */}
+      <Dialog
+        open={Boolean(unlockUserTarget)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setUnlockUserTarget(null);
+            setUnlockTemporaryPassword('');
+            setGeneratedTemporaryPassword('');
+            setUnlockLoading(false);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Desbloquear usuario</DialogTitle>
+            <DialogDescription>
+              Define una contraseña temporal para <strong>{unlockUserTarget?.nombre}</strong>. Este usuario
+              deberá cambiarla obligatoriamente al iniciar sesión.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="temporary-password">Contraseña temporal</Label>
+              <Input
+                id="temporary-password"
+                value={unlockTemporaryPassword}
+                onChange={(e) => setUnlockTemporaryPassword(e.target.value)}
+                placeholder="Mínimo 6 caracteres"
+                minLength={6}
+              />
+            </div>
+
+            {generatedTemporaryPassword && (
+              <div className="p-3 rounded-lg border border-amber-300 bg-amber-50 space-y-2">
+                <p className="text-sm font-medium text-amber-900">Contraseña temporal generada</p>
+                <div className="flex items-center justify-between gap-3">
+                  <code className="text-sm px-2 py-1 rounded bg-white border border-amber-200 text-amber-900">
+                    {generatedTemporaryPassword}
+                  </code>
+                  <Button type="button" variant="outline" size="sm" onClick={() => void copyTemporaryPassword()}>
+                    <Copy className="w-4 h-4 mr-1" />
+                    Copiar
+                  </Button>
+                </div>
+                <p className="text-xs text-amber-800">
+                  Entrégala al usuario. En su próximo acceso se le obligará a cambiarla.
+                </p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setUnlockUserTarget(null);
+                setUnlockTemporaryPassword('');
+                setGeneratedTemporaryPassword('');
+              }}
+            >
+              Cerrar
+            </Button>
+            <Button type="button" onClick={() => void handleUnlock()} disabled={unlockLoading}>
+              {unlockLoading ? 'Desbloqueando...' : 'Desbloquear y Asignar Contraseña'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Gestión de Datos */}
       <Card className="bg-gradient-to-r from-slate-50 to-gray-50 border-slate-200">
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <Shield className="w-5 h-5 text-slate-600" />
-            Herramientas de Gestión de Datos
+            Gestión de Datos
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -397,99 +480,120 @@ export function UserManagement() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {users.map((user) => (
-          <Card key={user.id}>
-            <CardContent className="pt-6">
-              <div className="flex items-start justify-between">
-                <div className="flex items-start gap-3 flex-1">
-                  <div className={`p-3 rounded-lg ${user.isBlocked ? 'bg-red-100' : 'bg-blue-100'}`}>
-                    <UserIcon className={`w-6 h-6 ${user.isBlocked ? 'text-red-600' : 'text-blue-600'}`} />
-                  </div>
+      <Card className="bg-gradient-to-r from-slate-50 to-gray-50 border-slate-200">
+        <CardHeader>
+          <div className="flex items-center justify-between gap-4">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Users className="w-5 h-5 text-slate-600" />
+              Gestión de Usuarios
+            </CardTitle>
+            <Button className="flex items-center gap-2" onClick={() => setIsDialogOpen(true)}>
+              <Plus className="w-4 h-4" />
+              Nuevo Usuario
+            </Button>
+          </div>
+          <p className="text-sm text-gray-600">Administra los usuarios del sistema</p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {users.map((user) => (
+              <Card key={user.id}>
+                <CardContent className="pt-6">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-start gap-3 flex-1">
+                      <div className={`p-3 rounded-lg ${user.isBlocked ? 'bg-red-100' : 'bg-blue-100'}`}>
+                        <UserIcon className={`w-6 h-6 ${user.isBlocked ? 'text-red-600' : 'text-blue-600'}`} />
+                      </div>
 
-                  <div className="flex-1 space-y-2">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-semibold text-gray-900">{user.nombre}</h3>
-                        {user.isBlocked && (
-                          <Badge className="bg-red-100 text-red-800 border-red-200">
-                            <AlertTriangle className="w-3 h-3 mr-1" />
-                            Bloqueado
-                          </Badge>
+                      <div className="flex-1 space-y-2">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-semibold text-gray-900">{user.nombre}</h3>
+                            {user.isBlocked && (
+                              <Badge className="bg-red-100 text-red-800 border-red-200">
+                                <AlertTriangle className="w-3 h-3 mr-1" />
+                                Bloqueado
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-sm text-gray-500">@{user.username}</p>
+                        </div>
+
+                        <Badge className={getRoleBadgeColor(user.role)}>
+                          <Shield className="w-3 h-3 mr-1" />
+                          {getRoleLabel(user.role)}
+                        </Badge>
+
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <Mail className="w-4 h-4 text-gray-400" />
+                          <span>{user.email}</span>
+                        </div>
+
+                        <div className="text-xs text-gray-500">
+                          Creado: {new Date(user.createdAt).toLocaleDateString('es-ES')}
+                          {user.lastLogin && (
+                            <span className="ml-2">
+                              • Último acceso: {new Date(user.lastLogin).toLocaleDateString('es-ES')}
+                            </span>
+                          )}
+                        </div>
+
+                        {user.failedAttempts > 0 && !user.isBlocked && (
+                          <div className="text-xs text-orange-600">
+                            Intentos fallidos: {user.failedAttempts} de 3
+                          </div>
                         )}
                       </div>
-                      <p className="text-sm text-gray-500">@{user.username}</p>
                     </div>
 
-                    <Badge className={getRoleBadgeColor(user.role)}>
-                      <Shield className="w-3 h-3 mr-1" />
-                      {getRoleLabel(user.role)}
-                    </Badge>
+                    <div className="flex items-center gap-2 ml-4">
+                      {user.isBlocked && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setUnlockUserTarget(user);
+                            setUnlockTemporaryPassword('');
+                            setGeneratedTemporaryPassword('');
+                          }}
+                          title="Desbloquear usuario"
+                        >
+                          <Unlock className="w-4 h-4" />
+                        </Button>
+                      )}
 
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <Mail className="w-4 h-4 text-gray-400" />
-                      <span>{user.email}</span>
-                    </div>
-
-                    <div className="text-xs text-gray-500">
-                      Creado: {new Date(user.createdAt).toLocaleDateString('es-ES')}
-                      {user.lastLogin && (
-                        <span className="ml-2">
-                          • Último acceso: {new Date(user.lastLogin).toLocaleDateString('es-ES')}
-                        </span>
+                      {user.id !== currentUser?.id && (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="ghost" size="sm">
+                              <Trash2 className="w-4 h-4 text-red-600" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>¿Eliminar usuario?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Esta acción no se puede deshacer. Se eliminará permanentemente el usuario
+                                <strong> {user.nombre}</strong>.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => void handleDelete(user.id)}>
+                                Eliminar
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       )}
                     </div>
-
-                    {user.failedAttempts > 0 && !user.isBlocked && (
-                      <div className="text-xs text-orange-600">
-                        Intentos fallidos: {user.failedAttempts} de 3
-                      </div>
-                    )}
                   </div>
-                </div>
-
-                <div className="flex items-center gap-2 ml-4">
-                  {user.isBlocked && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void handleUnlock(user.id)}
-                      title="Desbloquear usuario"
-                    >
-                      <Unlock className="w-4 h-4" />
-                    </Button>
-                  )}
-
-                  {user.id !== currentUser?.id && (
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="sm">
-                          <Trash2 className="w-4 h-4 text-red-600" />
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>¿Eliminar usuario?</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            Esta acción no se puede deshacer. Se eliminará permanentemente el usuario
-                            <strong> {user.nombre}</strong>.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                          <AlertDialogAction onClick={() => void handleDelete(user.id)}>
-                            Eliminar
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  )}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

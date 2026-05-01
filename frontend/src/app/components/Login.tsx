@@ -1,10 +1,17 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { LogIn, AlertCircle } from 'lucide-react';
+import { LogIn, AlertCircle, Mail } from 'lucide-react';
 import { Alert, AlertDescription } from './ui/alert';
 import { useAuth } from '../contexts/AuthContext';
 import { login as loginUser } from '../utils/auth-storage';
+import { AuthLoginErrorCode } from '../utils/api-client';
 import imgImage2 from '@/assets/ad798bea02d5fbca4c6a6593547370567bd6f22c.png';
+
+const LOGIN_INFO_ALERT_CODES = new Set<string>([
+  AuthLoginErrorCode.AdminRecoveryEmailSent,
+  AuthLoginErrorCode.AdminRecoverySmtpNotConfigured,
+  AuthLoginErrorCode.AdminRecoveryEmailFailed,
+]);
 import logoImage from '../../imports/Logo.png';
 
 export function Login() {
@@ -15,20 +22,31 @@ export function Login() {
     password: '',
   });
   const [error, setError] = useState('');
+  const [infoMessage, setInfoMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setInfoMessage('');
     setLoading(true);
 
     const result = await loginUser(formData.username, formData.password);
 
     if (result.success && result.user) {
       login(result.user);
-      navigate('/');
+      if (result.user.mustChangePassword) {
+        navigate('/perfil');
+      } else {
+        navigate('/');
+      }
     } else {
-      setError(result.message || 'Error al iniciar sesión');
+      const msg = result.message || 'Error al iniciar sesión';
+      if (result.code && LOGIN_INFO_ALERT_CODES.has(result.code)) {
+        setInfoMessage(msg);
+      } else {
+        setError(msg);
+      }
     }
 
     setLoading(false);
@@ -81,6 +99,12 @@ export function Login() {
               {/* Formulario */}
               <form onSubmit={handleSubmit} className="px-6 pb-6 pt-6">
                 <div className="space-y-4">
+                  {infoMessage && (
+                    <Alert variant="default" className="border-[#155dfc]/30 bg-[#eff6ff] text-[#1e3a5f] [&>svg]:text-[#155dfc]">
+                      <Mail className="h-4 w-4 shrink-0" />
+                      <AlertDescription className="text-[#1e3a5f]">{infoMessage}</AlertDescription>
+                    </Alert>
+                  )}
                   {error && (
                     <Alert variant="destructive">
                       <AlertCircle className="h-4 w-4" />
@@ -133,17 +157,6 @@ export function Login() {
                   </button>
                 </div>
               </form>
-            </div>
-
-            {/* Información de demo */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
-              <div className="text-sm space-y-1">
-                <div className="font-medium text-blue-900">Usuario de prueba:</div>
-                <div className="text-blue-700">
-                  <div>Usuario: <span className="font-mono font-semibold">admin</span></div>
-                  <div>Contraseña: <span className="font-mono font-semibold">admin123</span></div>
-                </div>
-              </div>
             </div>
           </div>
         </div>

@@ -1,28 +1,77 @@
+import React, { lazy, Suspense, type ComponentType } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router';
 import { Layout } from './components/Layout';
-import { Login } from './components/Login';
-import { Dashboard } from './components/Dashboard';
-import { WorkCentersList } from './components/WorkCentersList';
-import { WorkCenterForm } from './components/WorkCenterForm';
-import { WorkCenterStructure } from './components/WorkCenterStructure';
-import { WorkCenterStructureForm } from './components/WorkCenterStructureForm';
-import { WorkCenterPositions } from './components/WorkCenterPositions';
-import { WorkCenterPositionForm } from './components/WorkCenterPositionForm';
-import { EvaluationsList } from './components/EvaluationsList';
-import { EvaluationForm } from './components/EvaluationForm';
-import { EvaluationDetail } from './components/EvaluationDetail';
-import { PrintDocuments } from './components/PrintDocuments';
-import { UserManagement } from './components/UserManagement';
-import { UserProfile } from './components/UserProfile';
-import { JobPositionCategories } from './components/JobPositionCategories';
-import { JobPositionCategoryForm } from './components/JobPositionCategoryForm';
 import { ProtectedRoute } from './components/ProtectedRoute';
-import { NotFound } from './components/NotFound';
+
+function RouteFallback() {
+  return (
+    <div className="flex min-h-[50vh] items-center justify-center bg-gray-50 text-sm text-gray-600">
+      Cargando…
+    </div>
+  );
+}
+
+function loadPage(importer: () => Promise<{ default: ComponentType<object> }>) {
+  const Comp = lazy(importer);
+  return function LazyPage() {
+    return (
+      <Suspense fallback={<RouteFallback />}>
+        <Comp />
+      </Suspense>
+    );
+  };
+}
+
+const LoginPage = loadPage(() => import('./components/Login').then((m) => ({ default: m.Login })));
+const DashboardPage = loadPage(() => import('./components/Dashboard').then((m) => ({ default: m.Dashboard })));
+const WorkCentersListPage = loadPage(() =>
+  import('./components/WorkCentersList').then((m) => ({ default: m.WorkCentersList })),
+);
+const WorkCenterFormPage = loadPage(() =>
+  import('./components/WorkCenterForm').then((m) => ({ default: m.WorkCenterForm })),
+);
+const WorkCenterStructurePage = loadPage(() =>
+  import('./components/WorkCenterStructure').then((m) => ({ default: m.WorkCenterStructure })),
+);
+const WorkCenterStructureFormPage = loadPage(() =>
+  import('./components/WorkCenterStructureForm').then((m) => ({ default: m.WorkCenterStructureForm })),
+);
+const WorkCenterPositionsPage = loadPage(() =>
+  import('./components/WorkCenterPositions').then((m) => ({ default: m.WorkCenterPositions })),
+);
+const WorkCenterPositionFormPage = loadPage(() =>
+  import('./components/WorkCenterPositionForm').then((m) => ({ default: m.WorkCenterPositionForm })),
+);
+const EvaluationsListPage = loadPage(() =>
+  import('./components/EvaluationsList').then((m) => ({ default: m.EvaluationsList })),
+);
+const EvaluationFormPage = loadPage(() =>
+  import('./components/EvaluationForm').then((m) => ({ default: m.EvaluationForm })),
+);
+const EvaluationDetailPage = loadPage(() =>
+  import('./components/EvaluationDetail').then((m) => ({ default: m.EvaluationDetail })),
+);
+const PrintDocumentsPage = loadPage(() =>
+  import('./components/PrintDocuments').then((m) => ({ default: m.PrintDocuments })),
+);
+const UserManagementPage = loadPage(() =>
+  import('./components/UserManagement').then((m) => ({ default: m.UserManagement })),
+);
+const UserProfilePage = loadPage(() =>
+  import('./components/UserProfile').then((m) => ({ default: m.UserProfile })),
+);
+const JobPositionCategoriesPage = loadPage(() =>
+  import('./components/JobPositionCategories').then((m) => ({ default: m.JobPositionCategories })),
+);
+const JobPositionCategoryFormPage = loadPage(() =>
+  import('./components/JobPositionCategoryForm').then((m) => ({ default: m.JobPositionCategoryForm })),
+);
+const NotFoundPage = loadPage(() => import('./components/NotFound').then((m) => ({ default: m.NotFound })));
 
 export const router = createBrowserRouter([
   {
     path: '/iniciar-sesion',
-    Component: Login,
+    Component: LoginPage,
   },
   {
     path: '/',
@@ -32,108 +81,108 @@ export const router = createBrowserRouter([
       </ProtectedRoute>
     ),
     children: [
-      { index: true, Component: Dashboard },
-      { 
-        path: 'centros', 
+      { index: true, Component: DashboardPage },
+      {
+        path: 'centros',
         element: (
           <ProtectedRoute permission="ver_evaluaciones">
-            <WorkCentersList />
+            <WorkCentersListPage />
           </ProtectedRoute>
         ),
       },
-      { 
-        path: 'centros/nuevo', 
+      {
+        path: 'centros/nuevo',
         element: (
           <ProtectedRoute permission="crear_centros_trabajo">
-            <WorkCenterForm />
+            <WorkCenterFormPage />
           </ProtectedRoute>
         ),
       },
-      { 
-        path: 'centros/editar/:id', 
+      {
+        path: 'centros/editar/:id',
         element: (
           <ProtectedRoute permission="editar_centros_trabajo">
-            <WorkCenterForm />
+            <WorkCenterFormPage />
           </ProtectedRoute>
         ),
       },
-      { 
-        path: 'centros/:centerId/estructura', 
+      {
+        path: 'centros/:centerId/estructura',
         element: (
           <ProtectedRoute permission="gestionar_estructura">
-            <WorkCenterStructure />
+            <WorkCenterStructurePage />
           </ProtectedRoute>
         ),
       },
-      { 
-        path: 'centros/:centerId/estructura/nuevo', 
+      {
+        path: 'centros/:centerId/estructura/nuevo',
         element: (
           <ProtectedRoute permission="gestionar_estructura">
-            <WorkCenterStructureForm />
+            <WorkCenterStructureFormPage />
           </ProtectedRoute>
         ),
       },
-      { 
-        path: 'centros/:centerId/estructura/editar/:structureId', 
+      {
+        path: 'centros/:centerId/estructura/editar/:structureId',
         element: (
           <ProtectedRoute permission="gestionar_estructura">
-            <WorkCenterStructureForm />
+            <WorkCenterStructureFormPage />
           </ProtectedRoute>
         ),
       },
-      { 
-        path: 'centros/:centerId/puestos', 
+      {
+        path: 'centros/:centerId/puestos',
         element: (
           <ProtectedRoute permission="gestionar_puestos">
-            <WorkCenterPositions />
+            <WorkCenterPositionsPage />
           </ProtectedRoute>
         ),
       },
-      { 
-        path: 'centros/:centerId/puestos/asignar', 
+      {
+        path: 'centros/:centerId/puestos/asignar',
         element: (
           <ProtectedRoute permission="gestionar_puestos">
-            <WorkCenterPositionForm />
+            <WorkCenterPositionFormPage />
           </ProtectedRoute>
         ),
       },
-      { 
-        path: 'centros/:centerId/puestos/editar/:positionId', 
+      {
+        path: 'centros/:centerId/puestos/editar/:positionId',
         element: (
           <ProtectedRoute permission="gestionar_puestos">
-            <WorkCenterPositionForm />
+            <WorkCenterPositionFormPage />
           </ProtectedRoute>
         ),
       },
-      { 
-        path: 'puestos/categorias', 
+      {
+        path: 'puestos/categorias',
         element: (
           <ProtectedRoute permission="gestionar_puestos">
-            <JobPositionCategories />
+            <JobPositionCategoriesPage />
           </ProtectedRoute>
         ),
       },
-      { 
-        path: 'puestos/categorias/nueva', 
+      {
+        path: 'puestos/categorias/nueva',
         element: (
           <ProtectedRoute permission="gestionar_puestos">
-            <JobPositionCategoryForm />
+            <JobPositionCategoryFormPage />
           </ProtectedRoute>
         ),
       },
-      { 
-        path: 'puestos/categorias/editar/:id', 
+      {
+        path: 'puestos/categorias/editar/:id',
         element: (
           <ProtectedRoute permission="gestionar_puestos">
-            <JobPositionCategoryForm />
+            <JobPositionCategoryFormPage />
           </ProtectedRoute>
         ),
       },
-      { 
-        path: 'evaluaciones', 
+      {
+        path: 'evaluaciones',
         element: (
           <ProtectedRoute permission="ver_evaluaciones">
-            <EvaluationsList />
+            <EvaluationsListPage />
           </ProtectedRoute>
         ),
       },
@@ -141,7 +190,7 @@ export const router = createBrowserRouter([
         path: 'evaluaciones/nueva',
         element: (
           <ProtectedRoute permission="crear_evaluaciones">
-            <EvaluationForm />
+            <EvaluationFormPage />
           </ProtectedRoute>
         ),
       },
@@ -149,7 +198,7 @@ export const router = createBrowserRouter([
         path: 'evaluaciones/editar/:id',
         element: (
           <ProtectedRoute permission="crear_evaluaciones">
-            <EvaluationForm />
+            <EvaluationFormPage />
           </ProtectedRoute>
         ),
       },
@@ -157,23 +206,23 @@ export const router = createBrowserRouter([
         path: 'evaluaciones/:id',
         element: (
           <ProtectedRoute permission="ver_evaluaciones">
-            <EvaluationDetail />
+            <EvaluationDetailPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'gestion',
+        element: (
+          <ProtectedRoute permission="gestionar_usuarios">
+            <UserManagementPage />
           </ProtectedRoute>
         ),
       },
       {
         path: 'impresion',
         element: (
-          <ProtectedRoute permission="ver_evaluaciones">
-            <PrintDocuments />
-          </ProtectedRoute>
-        ),
-      },
-      {
-        path: 'usuarios',
-        element: (
-          <ProtectedRoute permission="gestionar_usuarios">
-            <UserManagement />
+          <ProtectedRoute permission="generar_documentos">
+            <PrintDocumentsPage />
           </ProtectedRoute>
         ),
       },
@@ -181,11 +230,15 @@ export const router = createBrowserRouter([
         path: 'perfil',
         element: (
           <ProtectedRoute>
-            <UserProfile />
+            <UserProfilePage />
           </ProtectedRoute>
         ),
       },
-      { path: '*', Component: NotFound },
+      {
+        path: 'usuarios',
+        element: <Navigate to="/gestion" replace />,
+      },
+      { path: '*', Component: NotFoundPage },
     ],
   },
 ]);

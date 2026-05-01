@@ -3,6 +3,7 @@ import { Building2, FileText, BarChart3, Users, LogOut, User as UserIcon, Printe
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
+import { hasPermission } from '../utils/auth-storage';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,17 +28,20 @@ export function Layout() {
     { path: '/', label: 'Dashboard', icon: BarChart3 },
     { path: '/centros', label: 'Centros de Trabajo', icon: Building2 },
     { path: '/evaluaciones', label: 'Evaluaciones', icon: FileText },
-    { path: '/impresion', label: 'Impresión de Documentos', icon: Printer },
   ];
+
+  if (hasPermission(user, 'generar_documentos')) {
+    navItems.push({ path: '/impresion', label: 'Impresión de Documentos', icon: Printer });
+  }
 
   // Agregar opción de gestión de puestos para técnicos
   if (user?.role === 'tecnico' || user?.role === 'administrador') {
     navItems.push({ path: '/puestos/categorias', label: 'Puestos de Trabajo', icon: Users });
   }
 
-  // Agregar opción de gestión de usuarios solo para administradores
+  // Agregar opción de gestión de usuarios y datos olo para administradores
   if (user?.role === 'administrador') {
-    navItems.push({ path: '/usuarios', label: 'Usuarios', icon: Settings });
+    navItems.push({ path: '/gestion', label: 'Gestión', icon: Settings });
   }
 
   const getRoleBadgeColor = (role: string) => {

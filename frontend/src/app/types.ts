@@ -19,6 +19,7 @@ export interface User {
   role: UserRole;
   isBlocked: boolean;
   failedAttempts: number;
+  mustChangePassword?: boolean;
   createdAt: string;
   lastLogin?: string;
 }

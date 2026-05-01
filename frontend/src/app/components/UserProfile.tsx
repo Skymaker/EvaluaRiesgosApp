@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { User as UserIcon, Mail, Lock, Save, ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -15,9 +15,11 @@ import { apiRequest } from '../utils/api-client';
 export function UserProfile() {
   const navigate = useNavigate();
   const { user, updateUser } = useAuth();
+  const isPasswordChangeRequired = Boolean(user?.mustChangePassword);
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [activeTab, setActiveTab] = useState(isPasswordChangeRequired ? 'password' : 'profile');
 
   const [profileData, setProfileData] = useState({
     nombre: user?.nombre || '',
@@ -29,6 +31,12 @@ export function UserProfile() {
     newPassword: '',
     confirmPassword: '',
   });
+
+  useEffect(() => {
+    if (isPasswordChangeRequired) {
+      setActiveTab('password');
+    }
+  }, [isPasswordChangeRequired]);
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,6 +76,11 @@ export function UserProfile() {
       return;
     }
 
+    if (passwordData.newPassword === passwordData.currentPassword) {
+      toast.error('La nueva contraseña no puede ser igual a la anterior');
+      return;
+    }
+
     try {
       await apiRequest(`/usuarios/${user.id}/cambiar-contrasena`, {
         method: 'POST',
@@ -84,7 +97,14 @@ export function UserProfile() {
         confirmPassword: '',
       });
 
+      const updatedUser = { ...user, mustChangePassword: false };
+      updateCurrentUser(updatedUser);
+      updateUser(updatedUser);
+
       toast.success('Contraseña actualizada correctamente');
+      if (isPasswordChangeRequired) {
+        navigate('/');
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'No se pudo actualizar la contraseña');
     }
@@ -123,12 +143,23 @@ export function UserProfile() {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => navigate(-1)}
+          disabled={isPasswordChangeRequired}
+          title={isPasswordChangeRequired ? 'Debes cambiar la contraseña temporal para continuar' : undefined}
+        >
           <ArrowLeft className="w-4 h-4" />
         </Button>
         <div>
           <h2 className="text-2xl font-semibold text-gray-900">Mi Perfil</h2>
           <p className="text-gray-600 mt-1">Gestiona tu información personal y seguridad</p>
+          {isPasswordChangeRequired && (
+            <p className="text-sm text-amber-700 mt-2">
+              Debes cambiar tu contraseña temporal para continuar usando el sistema.
+            </p>
+          )}
         </div>
       </div>
 
@@ -172,9 +203,16 @@ export function UserProfile() {
       </Card>
 
       {/* Tabs para Editar Perfil y Cambiar Contraseña */}
-      <Tabs defaultValue="profile" className="w-full">
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => {
+          if (isPasswordChangeRequired && value !== 'password') return;
+          setActiveTab(value);
+        }}
+        className="w-full"
+      >
         <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="profile">Editar Perfil</TabsTrigger>
+          <TabsTrigger value="profile" disabled={isPasswordChangeRequired}>Editar Perfil</TabsTrigger>
           <TabsTrigger value="password">Cambiar Contraseña</TabsTrigger>
         </TabsList>
 

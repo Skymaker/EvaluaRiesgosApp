@@ -1,5 +1,23 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
 
+/** Códigos de error en POST /autenticacion/iniciar-sesion (recuperación admin). */
+export const AuthLoginErrorCode = {
+  AdminRecoveryEmailSent: "ADMIN_RECOVERY_EMAIL_SENT",
+  AdminRecoverySmtpNotConfigured: "ADMIN_RECOVERY_SMTP_NOT_CONFIGURED",
+  AdminRecoveryEmailFailed: "ADMIN_RECOVERY_EMAIL_FAILED",
+} as const;
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public code?: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 let sessionToken: string | null = null;
 
 export const setSessionToken = (token: string | null) => {
@@ -24,13 +42,15 @@ export async function apiRequest(path: string, init: RequestInit = {}) {
 
   if (!response.ok) {
     let message = `HTTP ${response.status}`;
+    let code: string | undefined;
     try {
       const errorData = await response.json();
       message = errorData.message || message;
+      if (typeof errorData.code === "string") code = errorData.code;
     } catch {
       // Ignore parse errors and keep fallback message.
     }
-    throw new Error(message);
+    throw new ApiError(message, response.status, code);
   }
 
   if (response.status === 204) return null;

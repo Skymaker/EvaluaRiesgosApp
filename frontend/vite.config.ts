@@ -13,4 +13,17 @@ export default defineConfig({
     },
   },
   assetsInclude: ['**/*.svg', '**/*.csv'],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return;
+          if (id.includes('react-router')) return 'react-router';
+          if (id.includes('lucide-react')) return 'lucide';
+          if (id.includes('@radix-ui')) return 'radix';
+          return 'vendor';
+        },
+      },
+    },
+  },
 })

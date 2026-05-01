@@ -1,4 +1,4 @@
-import { Navigate } from 'react-router';
+import { Navigate, useLocation } from 'react-router';
 import { useAuth } from '../contexts/AuthContext';
 import { hasPermission } from '../utils/auth-storage';
 
@@ -9,6 +9,7 @@ interface ProtectedRouteProps {
 
 export function ProtectedRoute({ children, permission }: ProtectedRouteProps) {
   const { user, isAuthenticated } = useAuth();
+  const location = useLocation();
 
   if (!isAuthenticated) {
     return <Navigate to="/iniciar-sesion" replace />;
@@ -22,6 +23,10 @@ export function ProtectedRoute({ children, permission }: ProtectedRouteProps) {
         <p className="text-gray-600">No tienes permisos para acceder a esta sección.</p>
       </div>
     );
+  }
+
+  if (user?.mustChangePassword && location.pathname !== '/perfil') {
+    return <Navigate to="/perfil" replace />;
   }
 
   return <>{children}</>;

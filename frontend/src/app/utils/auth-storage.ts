@@ -1,5 +1,5 @@
 import { User } from '../types';
-import { apiRequest, setSessionToken } from './api-client';
+import { apiRequest, ApiError, setSessionToken } from './api-client';
 
 let usersCache: User[] = [];
 let currentUserCache: User | null = null;
@@ -58,7 +58,13 @@ export const getUserByUsername = (username: string): User | undefined => {
 export const login = async (
   username: string,
   password: string
-): Promise<{ success: boolean; user?: User; message?: string }> => {
+): Promise<{
+  success: boolean;
+  user?: User;
+  message?: string;
+  status?: number;
+  code?: string;
+}> => {
   try {
     const result = await apiRequest('/autenticacion/iniciar-sesion', {
       method: 'POST',
@@ -74,6 +80,14 @@ export const login = async (
     await refreshUsers();
     return { success: true, user: result.user };
   } catch (error) {
+    if (error instanceof ApiError) {
+      return {
+        success: false,
+        message: error.message,
+        status: error.status,
+        code: error.code,
+      };
+    }
     return { success: false, message: error instanceof Error ? error.message : 'Error al iniciar sesión' };
   }
 };
@@ -92,9 +106,13 @@ export const updateCurrentUser = (user: User): void => {
   currentUserCache = user;
 };
 
-export const unlockUser = async (userId: string): Promise<void> => {
-  await apiRequest(`/usuarios/${userId}/desbloquear`, { method: 'POST' });
+export const unlockUser = async (userId: string, temporaryPassword: string): Promise<string> => {
+  const response = await apiRequest(`/usuarios/${userId}/desbloquear`, {
+    method: 'POST',
+    body: JSON.stringify({ temporaryPassword }),
+  });
   await refreshUsers();
+  return response?.temporaryPassword || temporaryPassword;
 };
 
 export const hasPermission = (user: User | null, permission: string): boolean => {
@@ -109,7 +127,6 @@ export const hasPermission = (user: User | null, permission: string): boolean =>
       'crear_centros_trabajo',
       'crear_evaluaciones',
       'ver_evaluaciones',
-      'generar_documentos',
       'gestionar_estructura',
       'gestionar_puestos',
     ],
