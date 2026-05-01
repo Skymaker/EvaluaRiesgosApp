@@ -1,3 +1,6 @@
+# Documentación local / memoria PFC (no subir a GitHub)
+docs/
+
 # Dependencias
 node_modules/
 # Entorno y secretos (mantener .env.example en el repo)

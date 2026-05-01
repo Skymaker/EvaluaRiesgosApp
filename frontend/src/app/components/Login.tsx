@@ -5,14 +5,14 @@ import { Alert, AlertDescription } from './ui/alert';
 import { useAuth } from '../contexts/AuthContext';
 import { login as loginUser } from '../utils/auth-storage';
 import { AuthLoginErrorCode } from '../utils/api-client';
-import imgImage2 from '@/assets/ad798bea02d5fbca4c6a6593547370567bd6f22c.png';
+import loginIllustration from '@/assets/login-ilustracion.png';
+import logoImage from '../../imports/Logo.png';
 
 const LOGIN_INFO_ALERT_CODES = new Set<string>([
   AuthLoginErrorCode.AdminRecoveryEmailSent,
   AuthLoginErrorCode.AdminRecoverySmtpNotConfigured,
   AuthLoginErrorCode.AdminRecoveryEmailFailed,
 ]);
-import logoImage from '../../imports/Logo.png';
 
 export function Login() {
   const navigate = useNavigate();
@@ -59,7 +59,7 @@ export function Login() {
           {/* Imagen izquierda */}
           <div className="hidden lg:block flex-1 max-w-[864px]">
             <img
-              src={imgImage2}
+              src={loginIllustration}
               alt="Risk Assessment Illustration"
               className="w-full h-auto object-contain"
             />
