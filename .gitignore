@@ -1,0 +1,38 @@
+# Dependencias
+node_modules/
+# Entorno y secretos (mantener .env.example en el repo)
+.env
+.env.*
+!.env.example
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+# Build
+frontend/dist
+backend/dist
+build
+*.tsbuildinfo
+# Vite / cachés
+.vite
+.cache
+# Logs y cobertura
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+coverage
+.nyc_output
+# OS
+.DS_Store
+Thumbs.db
+# IDE (quita la línea de .vscode si la queréis compartir)
+.idea
+.vscode/*
+!.vscode/extensions.json
+# Opcional
+.eslintcache
