@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Users, Plus, Trash2, Unlock, Shield, Mail, User as UserIcon, AlertTriangle, Download, Upload, Trash, Copy } from 'lucide-react';
+import { Users, Plus, Trash2, Unlock, Shield, Mail, User as UserIcon, AlertTriangle, Download, Upload, Trash } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -8,19 +8,27 @@ import { Badge } from './ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from './ui/alert-dialog';
-import { getUsers, saveUser, deleteUser, unlockUser, initializeUsers, refreshUsers } from '../utils/auth-storage';
+import {
+  getUsers,
+  saveUser,
+  deleteUser,
+  unlockUser,
+  initializeUsers,
+  refreshUsers,
+  getCurrentUser,
+  logout as logoutUser,
+} from '../utils/auth-storage';
 import { User, UserRole } from '../types';
-import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'sonner';
 import { apiRequest } from '../utils/api-client';
 
 export function UserManagement() {
-  const { user: currentUser, logout } = useAuth();
+  const currentUser = getCurrentUser();
+  const logout = () => logoutUser();
   const [users, setUsers] = useState<User[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [unlockUserTarget, setUnlockUserTarget] = useState<User | null>(null);
   const [unlockTemporaryPassword, setUnlockTemporaryPassword] = useState('');
-  const [generatedTemporaryPassword, setGeneratedTemporaryPassword] = useState('');
   const [unlockLoading, setUnlockLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState({
@@ -39,6 +47,13 @@ export function UserManagement() {
   useEffect(() => {
     void loadUsers();
   }, []);
+
+  const generateTemporaryPassword = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%';
+    const randomBytes = new Uint32Array(12);
+    crypto.getRandomValues(randomBytes);
+    return Array.from(randomBytes, (value) => chars[value % chars.length]).join('');
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,21 +99,16 @@ export function UserManagement() {
 
     setUnlockLoading(true);
     try {
-      const temporaryPassword = await unlockUser(unlockUserTarget.id, unlockTemporaryPassword);
+      const message = await unlockUser(unlockUserTarget.id, unlockTemporaryPassword);
       await loadUsers();
-      setGeneratedTemporaryPassword(temporaryPassword);
-      toast.success('Usuario desbloqueado');
+      toast.success(message);
+      setUnlockUserTarget(null);
+      setUnlockTemporaryPassword('');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'No se pudo desbloquear el usuario');
     } finally {
       setUnlockLoading(false);
     }
-  };
-
-  const copyTemporaryPassword = async () => {
-    if (!generatedTemporaryPassword) return;
-    await navigator.clipboard.writeText(generatedTemporaryPassword);
-    toast.success('Contraseña temporal copiada al portapapeles');
   };
 
   const handleDelete = async (userId: string) => {
@@ -313,12 +323,14 @@ export function UserManagement() {
           if (!open) {
             setUnlockUserTarget(null);
             setUnlockTemporaryPassword('');
-            setGeneratedTemporaryPassword('');
             setUnlockLoading(false);
           }
         }}
       >
-        <DialogContent>
+        <DialogContent
+          onInteractOutside={(event) => event.preventDefault()}
+          onEscapeKeyDown={(event) => event.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle>Desbloquear usuario</DialogTitle>
             <DialogDescription>
@@ -338,40 +350,11 @@ export function UserManagement() {
                 minLength={6}
               />
             </div>
-
-            {generatedTemporaryPassword && (
-              <div className="p-3 rounded-lg border border-amber-300 bg-amber-50 space-y-2">
-                <p className="text-sm font-medium text-amber-900">Contraseña temporal generada</p>
-                <div className="flex items-center justify-between gap-3">
-                  <code className="text-sm px-2 py-1 rounded bg-white border border-amber-200 text-amber-900">
-                    {generatedTemporaryPassword}
-                  </code>
-                  <Button type="button" variant="outline" size="sm" onClick={() => void copyTemporaryPassword()}>
-                    <Copy className="w-4 h-4 mr-1" />
-                    Copiar
-                  </Button>
-                </div>
-                <p className="text-xs text-amber-800">
-                  Entrégala al usuario. En su próximo acceso se le obligará a cambiarla.
-                </p>
-              </div>
-            )}
           </div>
 
           <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setUnlockUserTarget(null);
-                setUnlockTemporaryPassword('');
-                setGeneratedTemporaryPassword('');
-              }}
-            >
-              Cerrar
-            </Button>
             <Button type="button" onClick={() => void handleUnlock()} disabled={unlockLoading}>
-              {unlockLoading ? 'Desbloqueando...' : 'Desbloquear y Asignar Contraseña'}
+              {unlockLoading ? 'Desbloqueando...' : 'Desbloquear y enviar contraseña'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -553,8 +536,7 @@ export function UserManagement() {
                           size="sm"
                           onClick={() => {
                             setUnlockUserTarget(user);
-                            setUnlockTemporaryPassword('');
-                            setGeneratedTemporaryPassword('');
+                            setUnlockTemporaryPassword(generateTemporaryPassword());
                           }}
                           title="Desbloquear usuario"
                         >

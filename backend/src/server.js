@@ -59,6 +59,26 @@ Si no ha sido usted quien ha intentado acceder, contacte de inmediato con el res
   await transporter.sendMail({ from, to, subject, text, html });
 }
 
+async function sendManualUnlockTemporaryPasswordEmail({ to, nombre, username, temporaryPassword }) {
+  const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const transporter = createMailTransport();
+  const subject = `${APP_PUBLIC_NAME} — contraseña temporal`;
+  const text = `Hola ${nombre},
+
+Su cuenta "${username}" ha sido desbloqueada por un administrador.
+
+Su contraseña temporal es: ${temporaryPassword}
+
+Al iniciar sesión deberá cambiar esta contraseña por una nueva.`;
+
+  const html = `<p>Hola <strong>${escapeHtml(nombre)}</strong>,</p>
+<p>Su cuenta <strong>${escapeHtml(username)}</strong> ha sido desbloqueada por un administrador.</p>
+<p>Su contraseña temporal es: <code style="font-size:1.1em">${escapeHtml(temporaryPassword)}</code></p>
+<p>Al iniciar sesión deberá <strong>cambiar esta contraseña</strong> por una nueva.</p>`;
+
+  await transporter.sendMail({ from, to, subject, text, html });
+}
+
 function escapeHtml(s) {
   return String(s)
     .replaceAll("&", "&amp;")
@@ -450,14 +470,50 @@ app.post("/usuarios/:id/desbloquear", async (req, res) => {
   if (!temporaryPassword || typeof temporaryPassword !== "string" || temporaryPassword.length < 6) {
     return res.status(400).json({ message: "La contraseña temporal debe tener al menos 6 caracteres" });
   }
+
+  const existing = await pool.query("select * from usuarios where id = $1", [id]);
+  if (existing.rowCount === 0) return res.status(404).json({ message: "Usuario no encontrado" });
+  const user = existing.rows[0];
+
+  if (!smtpConfigured()) {
+    return res.status(503).json({
+      message:
+        "El correo de recuperación no está configurado en el servidor. Contacte al administrador del sistema.",
+    });
+  }
+
+  const previousHash = user.hash_contrasena;
+  const previousMustChange = Boolean(user.requiere_cambio_contrasena);
+  const previousBlocked = Boolean(user.esta_bloqueado);
+  const previousAttempts = Number(user.intentos_fallidos || 0);
   const passwordHash = await bcrypt.hash(temporaryPassword, 10);
   await pool.query(
     "update usuarios set esta_bloqueado = false, intentos_fallidos = 0, hash_contrasena = $1, requiere_cambio_contrasena = true where id = $2",
     [passwordHash, id],
   );
-  const user = await pool.query("select * from usuarios where id = $1", [id]);
-  if (user.rowCount === 0) return res.status(404).json({ message: "Usuario no encontrado" });
-  res.json({ user: shapeUser(user.rows[0]), temporaryPassword });
+  try {
+    await sendManualUnlockTemporaryPasswordEmail({
+      to: user.correo,
+      nombre: user.nombre_completo,
+      username: user.nombre_usuario,
+      temporaryPassword,
+    });
+  } catch (err) {
+    console.error("Error enviando correo de desbloqueo manual:", err);
+    await pool.query(
+      "update usuarios set esta_bloqueado = $1, intentos_fallidos = $2, hash_contrasena = $3, requiere_cambio_contrasena = $4 where id = $5",
+      [previousBlocked, previousAttempts, previousHash, previousMustChange, id],
+    );
+    return res.status(503).json({
+      message: "No se pudo enviar la contraseña temporal por correo. Intente más tarde o contacte al soporte.",
+    });
+  }
+
+  const updatedUser = await pool.query("select * from usuarios where id = $1", [id]);
+  res.json({
+    user: shapeUser(updatedUser.rows[0]),
+    message: `Usuario desbloqueado. Se ha enviado la contraseña temporal a ${user.correo}.`,
+  });
 });
 
 app.delete("/usuarios/:id", async (req, res) => {

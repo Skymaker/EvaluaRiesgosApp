@@ -112,7 +112,7 @@ export const unlockUser = async (userId: string, temporaryPassword: string): Pro
     body: JSON.stringify({ temporaryPassword }),
   });
   await refreshUsers();
-  return response?.temporaryPassword || temporaryPassword;
+  return response?.message || 'Usuario desbloqueado y contraseña enviada por correo.';
 };
 
 export const hasPermission = (user: User | null, permission: string): boolean => {
