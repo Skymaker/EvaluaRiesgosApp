@@ -77,10 +77,10 @@ export function Login() {
                 />
               </div>
               <h1 className="text-[30px] font-bold text-[#101828] text-center leading-9">
-                Sistema de Evaluación
+                Evauapp
               </h1>
               <p className="text-[16px] text-[#4a5565] text-center mt-4 leading-6">
-                Riesgos Laborales
+              Sistema de Evaluación de Riesgos Laborales
               </p>
             </div>
 
