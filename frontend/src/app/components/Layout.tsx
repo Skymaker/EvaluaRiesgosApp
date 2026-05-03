@@ -88,8 +88,8 @@ export function Layout() {
                 />
               </div>
               <div>
-                <h1 className="font-semibold text-gray-900">Sistema de Evaluación</h1>
-                <p className="text-sm text-gray-500">Riesgos Laborales</p>
+                <h1 className="font-semibold text-gray-900">Evaluapp</h1>
+                <p className="text-sm text-gray-500">Sistema de Evaluación de Riesgos Laborales</p>
               </div>
             </div>
 

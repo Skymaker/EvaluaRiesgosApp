@@ -66,7 +66,7 @@ export function Login() {
           </div>
 
           {/* Formulario derecha */}
-          <div className="w-full max-w-[448px] flex flex-col gap-6">
+          <main className="w-full max-w-[448px] flex flex-col gap-6">
             {/* Logo y Título */}
             <div className="relative w-full">
               <div className="w-16 h-16 mx-auto mb-5">
@@ -158,7 +158,7 @@ export function Login() {
                 </div>
               </form>
             </div>
-          </div>
+          </main>
         </div>
       </div>
     </div>
