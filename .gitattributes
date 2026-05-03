@@ -1,0 +1,9 @@
+# Forzar que todos los archivos de texto se normalicen a LF al subir a GitHub
+* text=auto
+
+# Especificar que archivos de código siempre usen LF (estándar web)
+*.js text eol=lf
+*.html text eol=lf
+*.json text eol=lf
+*.css text eol=lf
+*.webmanifest text eol=lf
