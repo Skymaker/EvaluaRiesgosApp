@@ -5,11 +5,6 @@
 - `frontend/`: aplicación React + Vite.
 - `backend/`: API Node.js/Express conectada a PostgreSQL.
 
-## Funcionalidades destacadas recientes
-
-- Recuperación automática por correo para cuentas de administrador tras 3 intentos fallidos en login.
-- Desbloqueo manual de usuarios desde `Gestión` con contraseña temporal editable y envío por email.
-- Navegación responsive: en móvil se usa menú lateral (hamburguesa) para mostrar todas las opciones.
 
 ## Requisitos
 
