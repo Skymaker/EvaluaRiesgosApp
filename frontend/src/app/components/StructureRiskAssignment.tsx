@@ -17,7 +17,14 @@ import {
   X,
 } from 'lucide-react';
 import { flattenTree, getNodePath } from '../utils/structure-utils';
-import { calculateRiskLevel, getCategoryLabel, getRiskLevelColor, getRiskLevelLabel } from '../utils/risk-utils';
+import {
+  calculateRiskLevel,
+  getCategoryLabel,
+  getConsecuenciasLabel,
+  getProbabilidadLabel,
+  getRiskLevelColor,
+  getRiskLevelLabel,
+} from '../utils/risk-utils';
 import { toast } from 'sonner';
 
 interface StructureRiskAssignmentProps {
@@ -139,16 +146,13 @@ export function StructureRiskAssignmentComponent({
     currentRisk.consecuencias || 2
   );
 
-  // Debug: Log de assignments recibidos
-  console.log('📍 StructureRiskAssignment - assignments recibidos:', assignments.length, assignments);
-
   // Agrupar por ubicación
   const groupedByLocation = assignments.reduce((acc, assignment, index) => {
-    const key = assignment.structureNodeId;
+    const key = assignment.structureNodeId || `sin-id-${index}`;
     if (!acc[key]) {
       acc[key] = {
-        nodeName: assignment.structureNodeName,
-        nodePath: assignment.structureNodePath,
+        nodeName: assignment.structureNodeName || 'Ubicación',
+        nodePath: assignment.structureNodePath ?? '',
         assignments: [],
       };
     }
@@ -196,7 +200,8 @@ export function StructureRiskAssignmentComponent({
                   <SelectContent className="max-h-[300px]">
                     {flatNodes.map((node) => (
                       <SelectItem key={node.id} value={node.id}>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-col gap-0.5 text-left">
+                          <span className="font-medium text-gray-900">{node.nombre}</span>
                           <span className="text-xs text-gray-500">{getNodeDisplayPath(node.id)}</span>
                         </div>
                       </SelectItem>
@@ -208,7 +213,7 @@ export function StructureRiskAssignmentComponent({
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Categoría del Riesgo</Label>
                   <Select
@@ -251,7 +256,7 @@ export function StructureRiskAssignmentComponent({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Probabilidad (1-3): {currentRisk.probabilidad}</Label>
                   <Input
@@ -318,19 +323,23 @@ export function StructureRiskAssignmentComponent({
             {assignments.length > 0 && (
               <div className="space-y-4">
                 <h3 className="font-medium text-gray-900">Riesgos Asignados por Ubicación:</h3>
-                {Object.values(groupedByLocation).map((group, groupIndex) => (
-                  <div key={groupIndex} className="border border-gray-200 rounded-lg p-4 space-y-3">
+                {Object.entries(groupedByLocation).map(([locationKey, group]) => (
+                  <div key={locationKey} className="border border-gray-200 rounded-lg p-4 space-y-3">
                     <div className="flex items-start gap-2 text-sm">
                       <MapPin className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
                       <div>
                         <div className="font-medium text-gray-900">{group.nodeName}</div>
-                        <div className="text-xs text-gray-500 flex items-center gap-1">
-                          {group.nodePath.split(' > ').map((part, i, arr) => (
-                            <span key={i} className="flex items-center gap-1">
-                              {part}
-                              {i < arr.length - 1 && <ChevronRight className="w-3 h-3" />}
-                            </span>
-                          ))}
+                        <div className="flex flex-wrap items-center gap-1 text-xs text-gray-500">
+                          {(group.nodePath || '')
+                            .split(' > ')
+                            .map((p) => p.trim())
+                            .filter(Boolean)
+                            .map((part, i, arr) => (
+                              <span key={`${locationKey}-bc-${i}`} className="flex items-center gap-1">
+                                {part}
+                                {i < arr.length - 1 && <ChevronRight className="h-3 w-3 shrink-0" />}
+                              </span>
+                            ))}
                         </div>
                       </div>
                     </div>
@@ -339,30 +348,14 @@ export function StructureRiskAssignmentComponent({
                       {group.assignments.map(({ assignment, originalIndex }) => (
                         <div
                           key={originalIndex}
-                          className="p-3 bg-white border border-gray-200 rounded-lg"
+                          className="w-full space-y-2 rounded-lg border border-gray-200 bg-white p-3"
                         >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex-1 space-y-1">
-                              <div className="flex items-center gap-2">
-                                <Badge className={getRiskLevelColor(assignment.risk.nivel)}>
-                                  {getRiskLevelLabel(assignment.risk.nivel)}
-                                </Badge>
-                                <Badge variant="outline">
-                                  {getCategoryLabel(assignment.risk.categoria)}
-                                </Badge>
-                                <span className="text-xs text-gray-500">
-                                  P: {assignment.risk.probabilidad} | C: {assignment.risk.consecuencias}
-                                </span>
-                              </div>
-                              <p className="text-sm text-gray-900">{assignment.risk.descripcion}</p>
-                              {assignment.risk.medidasControl && (
-                                <p className="text-xs text-gray-600 bg-blue-50 p-2 rounded">
-                                  <span className="font-medium">Medidas:</span>{' '}
-                                  {assignment.risk.medidasControl}
-                                </p>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-1">
+                          {/* Línea 1: categoría + acciones */}
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="min-w-0 text-sm font-medium text-gray-900">
+                              {getCategoryLabel(assignment.risk.categoria)}
+                            </span>
+                            <div className="flex shrink-0 items-center gap-0.5">
                               <Button
                                 type="button"
                                 variant="ghost"
@@ -370,7 +363,7 @@ export function StructureRiskAssignmentComponent({
                                 onClick={() => handleEditRisk(originalIndex)}
                                 title="Editar riesgo"
                               >
-                                <Edit className="w-4 h-4 text-blue-600" />
+                                <Edit className="h-4 w-4 text-blue-600" />
                               </Button>
                               <Button
                                 type="button"
@@ -379,10 +372,34 @@ export function StructureRiskAssignmentComponent({
                                 onClick={() => handleRemoveAssignment(originalIndex)}
                                 title="Eliminar riesgo"
                               >
-                                <Trash2 className="w-4 h-4 text-red-600" />
+                                <Trash2 className="h-4 w-4 text-red-600" />
                               </Button>
                             </div>
                           </div>
+                          {/* Línea 2: probabilidad | consecuencia + nivel */}
+                          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                            <span className="min-w-0 shrink text-xs text-gray-600 sm:hidden">
+                              P: {assignment.risk.probabilidad} - C: {assignment.risk.consecuencias}
+                            </span>
+                            <span className="hidden min-w-0 text-xs text-gray-600 sm:inline">
+                              Probabilidad: {getProbabilidadLabel(assignment.risk.probabilidad)} ·
+                              Consecuencias: {getConsecuenciasLabel(assignment.risk.consecuencias)}
+                            </span>
+                            <Badge className={`${getRiskLevelColor(assignment.risk.nivel)} shrink-0`}>
+                              {getRiskLevelLabel(assignment.risk.nivel)}
+                            </Badge>
+                          </div>
+                          {/* Línea 3: descripción a ancho completo */}
+                          <p className="w-full text-sm leading-snug text-gray-900">
+                            {assignment.risk.descripcion}
+                          </p>
+                          {/* Línea 4: medidas a ancho completo */}
+                          {assignment.risk.medidasControl ? (
+                            <p className="w-full rounded-md bg-blue-50 p-2 text-xs leading-snug text-gray-700">
+                              <span className="font-medium text-gray-800">Medidas: </span>
+                              {assignment.risk.medidasControl}
+                            </p>
+                          ) : null}
                         </div>
                       ))}
                     </div>

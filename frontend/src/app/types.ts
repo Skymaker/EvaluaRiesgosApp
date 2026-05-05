@@ -160,5 +160,6 @@ export interface RiskEvaluation {
   riesgosEstructura: StructureRiskAssignment[]; // Riesgos asociados a lugares
   riesgosPuestos: JobPositionRiskAssignment[]; // Riesgos asociados a puestos
   observaciones: string;
+  /** Solo informativo. Valores vigentes: revisión, en progreso, completada (histórico: pendiente). */
   estado: 'pendiente' | 'en_progreso' | 'completada' | 'revision';
 }

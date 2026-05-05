@@ -21,6 +21,7 @@ import {
 import { User, UserRole } from '../types';
 import { toast } from 'sonner';
 import { apiRequest } from '../utils/api-client';
+import { IfInformationUI } from '../contexts/UiPreferencesContext';
 
 export function UserManagement() {
   const currentUser = getCurrentUser();
@@ -454,24 +455,26 @@ export function UserManagement() {
             </AlertDialog>
           </div>
 
-          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-            <p className="text-sm text-blue-900">
-              <strong>💡 Ayuda:</strong> Utiliza estas herramientas para realizar copias de seguridad,
-              transferir datos entre sistemas o reiniciar la aplicación cuando sea necesario.
-            </p>
-          </div>
+          <IfInformationUI>
+            <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-3">
+              <p className="text-sm text-blue-900">
+                <strong>💡 Ayuda:</strong> Utiliza estas herramientas para realizar copias de seguridad,
+                transferir datos entre sistemas o reiniciar la aplicación cuando sea necesario.
+              </p>
+            </div>
+          </IfInformationUI>
         </CardContent>
       </Card>
 
       <Card className="bg-gradient-to-r from-slate-50 to-gray-50 border-slate-200">
         <CardHeader>
-          <div className="flex items-center justify-between gap-4">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Users className="w-5 h-5 text-slate-600" />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Users className="h-5 w-5 shrink-0 text-slate-600" />
               Gestión de Usuarios
             </CardTitle>
-            <Button className="flex items-center gap-2" onClick={() => setIsDialogOpen(true)}>
-              <Plus className="w-4 h-4" />
+            <Button className="flex w-full shrink-0 items-center justify-center gap-2 sm:w-auto" onClick={() => setIsDialogOpen(true)}>
+              <Plus className="h-4 w-4" />
               Nuevo Usuario
             </Button>
           </div>
@@ -482,19 +485,19 @@ export function UserManagement() {
             {users.map((user) => (
               <Card key={user.id}>
                 <CardContent className="pt-6">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start gap-3 flex-1">
-                      <div className={`p-3 rounded-lg ${user.isBlocked ? 'bg-red-100' : 'bg-blue-100'}`}>
-                        <UserIcon className={`w-6 h-6 ${user.isBlocked ? 'text-red-600' : 'text-blue-600'}`} />
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex min-w-0 flex-1 items-start gap-3">
+                      <div className={`shrink-0 rounded-lg p-3 ${user.isBlocked ? 'bg-red-100' : 'bg-blue-100'}`}>
+                        <UserIcon className={`h-6 w-6 ${user.isBlocked ? 'text-red-600' : 'text-blue-600'}`} />
                       </div>
 
-                      <div className="flex-1 space-y-2">
+                      <div className="min-w-0 flex-1 space-y-2">
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <h3 className="font-semibold text-gray-900">{user.nombre}</h3>
                             {user.isBlocked && (
-                              <Badge className="bg-red-100 text-red-800 border-red-200">
-                                <AlertTriangle className="w-3 h-3 mr-1" />
+                              <Badge className="border-red-200 bg-red-100 text-red-800">
+                                <AlertTriangle className="mr-1 h-3 w-3" />
                                 Bloqueado
                               </Badge>
                             )}
@@ -503,13 +506,13 @@ export function UserManagement() {
                         </div>
 
                         <Badge className={getRoleBadgeColor(user.role)}>
-                          <Shield className="w-3 h-3 mr-1" />
+                          <Shield className="mr-1 h-3 w-3" />
                           {getRoleLabel(user.role)}
                         </Badge>
 
-                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <Mail className="w-4 h-4 text-gray-400" />
-                          <span>{user.email}</span>
+                        <div className="flex items-start gap-2 text-sm text-gray-600">
+                          <Mail className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                          <span className="min-w-0 break-all">{user.email}</span>
                         </div>
 
                         <div className="text-xs text-gray-500">
@@ -529,7 +532,7 @@ export function UserManagement() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 ml-4">
+                    <div className="flex justify-end gap-2 border-t border-gray-100 pt-3 sm:ml-4 sm:shrink-0 sm:justify-start sm:border-t-0 sm:pt-0">
                       {user.isBlocked && (
                         <Button
                           variant="outline"

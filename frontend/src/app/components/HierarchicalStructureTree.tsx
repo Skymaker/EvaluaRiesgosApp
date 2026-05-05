@@ -18,6 +18,7 @@ import {
   Mountain,
 } from 'lucide-react';
 import { StructureNode, StructureNodeType } from '../types';
+import { getEffectiveNodeArea } from '../utils/structure-utils';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { cn } from './ui/utils';
@@ -27,6 +28,8 @@ interface HierarchicalStructureTreeProps {
   onAddChild: (parentNode: StructureNode | null, type: StructureNodeType) => void;
   onEdit: (node: StructureNode) => void;
   onDelete: (node: StructureNode) => void;
+  /** Si devuelve true, no se puede eliminar el nodo (p. ej. riesgos en evaluaciones). */
+  isDeleteBlocked?: (node: StructureNode) => boolean;
 }
 
 export function HierarchicalStructureTree({
@@ -34,6 +37,7 @@ export function HierarchicalStructureTree({
   onAddChild,
   onEdit,
   onDelete,
+  isDeleteBlocked,
 }: HierarchicalStructureTreeProps) {
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
 
@@ -101,6 +105,11 @@ export function HierarchicalStructureTree({
     return labels[tipo];
   };
 
+  const formatAreaM2 = (value: number): string => {
+    const rounded = Math.round(value * 100) / 100;
+    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
+  };
+
   const getAllowedChildren = (tipo: StructureNodeType): StructureNodeType[] => {
     const allowedChildren: Record<StructureNodeType, StructureNodeType[]> = {
       edificio: ['planta', 'elemento_comunicacion_vertical', 'generico'],
@@ -134,6 +143,8 @@ export function HierarchicalStructureTree({
     const hasChildren = node.children && node.children.length > 0;
     const allowedChildren = getAllowedChildren(node.tipo);
     const canHaveChildren = allowedChildren.length > 0;
+    const deleteBlocked = isDeleteBlocked?.(node) ?? false;
+    const displayArea = getEffectiveNodeArea(node);
 
     return (
       <div key={node.id} className="mb-1">
@@ -142,7 +153,7 @@ export function HierarchicalStructureTree({
             'flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 transition-colors group',
             level === 0 && 'bg-blue-50 hover:bg-blue-100'
           )}
-          style={{ marginLeft: `${level * 24}px` }}
+          style={{ marginLeft: `${Math.min(level, 6) * 18}px` }}
         >
           {/* Toggle */}
           <button
@@ -166,14 +177,14 @@ export function HierarchicalStructureTree({
 
           {/* Info */}
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="font-medium text-gray-900 truncate">{node.nombre}</span>
-              <Badge variant="outline" className="text-xs">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              <span className="min-w-0 font-medium text-gray-900 break-words">{node.nombre}</span>
+              <Badge variant="outline" className="shrink-0 text-xs">
                 {getNodeTypeLabel(node.tipo)}
               </Badge>
-              {node.superficie && (
-                <Badge variant="secondary" className="text-xs">
-                  {node.superficie} m²
+              {displayArea > 0 && (
+                <Badge variant="secondary" className="shrink-0 text-xs">
+                  {formatAreaM2(displayArea)} m²
                 </Badge>
               )}
             </div>
@@ -182,8 +193,8 @@ export function HierarchicalStructureTree({
             )}
           </div>
 
-          {/* Actions */}
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {/* Actions: siempre visibles en táctil; hover solo desde md */}
+          <div className="flex shrink-0 items-center gap-0.5 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
             {canHaveChildren && (
               <Button
                 variant="ghost"
@@ -200,9 +211,14 @@ export function HierarchicalStructureTree({
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => onDelete(node)}
-              title="Eliminar"
-              className="text-red-600 hover:text-red-700"
+              onClick={() => !deleteBlocked && onDelete(node)}
+              disabled={deleteBlocked}
+              title={
+                deleteBlocked
+                  ? 'No se puede eliminar: hay riesgos asociados a esta ubicación en una evaluación'
+                  : 'Eliminar'
+              }
+              className="text-red-600 hover:text-red-700 disabled:opacity-40"
             >
               <Trash2 className="w-3 h-3" />
             </Button>

@@ -8,13 +8,16 @@ import { Label } from './ui/label';
 import { Badge } from './ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { useAuth } from '../contexts/AuthContext';
+import { IfInformationUI, useUiPreferences } from '../contexts/UiPreferencesContext';
 import { saveUser, updateCurrentUser } from '../utils/auth-storage';
+import { Switch } from './ui/switch';
 import { toast } from 'sonner';
 import { apiRequest } from '../utils/api-client';
 
 export function UserProfile() {
   const navigate = useNavigate();
   const { user, updateUser } = useAuth();
+  const { showInformationUI, setShowInformationUI } = useUiPreferences();
   const isPasswordChangeRequired = Boolean(user?.mustChangePassword);
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
@@ -202,6 +205,29 @@ export function UserProfile() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>Preferencias de pantalla</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0 flex-1 space-y-1">
+            <Label htmlFor="show-information-ui" className="text-base font-medium">
+              Mostrar tarjetas y mensajes informativos
+            </Label>
+            <p className="text-sm text-gray-500">
+              Incluye ayudas en azul, avisos explicativos y tarjetas de contexto en el resto de la
+              aplicación. Activado por defecto.
+            </p>
+          </div>
+          <Switch
+            id="show-information-ui"
+            checked={showInformationUI}
+            onCheckedChange={setShowInformationUI}
+            className="shrink-0"
+          />
+        </CardContent>
+      </Card>
+
       {/* Tabs para Editar Perfil y Cambiar Contraseña */}
       <Tabs
         value={activeTab}
@@ -211,9 +237,13 @@ export function UserProfile() {
         }}
         className="w-full"
       >
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="profile" disabled={isPasswordChangeRequired}>Editar Perfil</TabsTrigger>
-          <TabsTrigger value="password">Cambiar Contraseña</TabsTrigger>
+        <TabsList className="grid h-auto w-full grid-cols-1 gap-1 p-1 sm:grid-cols-2">
+          <TabsTrigger value="profile" disabled={isPasswordChangeRequired} className="whitespace-normal px-2 py-2 text-center text-xs sm:text-sm">
+            Editar Perfil
+          </TabsTrigger>
+          <TabsTrigger value="password" className="whitespace-normal px-2 py-2 text-center text-xs sm:text-sm">
+            Cambiar Contraseña
+          </TabsTrigger>
         </TabsList>
 
         {/* Tab: Editar Perfil */}
@@ -376,15 +406,17 @@ export function UserProfile() {
                   </div>
                 </div>
 
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <p className="text-sm text-blue-900">
-                    <strong>Requisitos de contraseña:</strong>
-                  </p>
-                  <ul className="text-sm text-blue-800 mt-2 space-y-1 list-disc list-inside">
-                    <li>Mínimo 6 caracteres</li>
-                    <li>Se recomienda usar una combinación de letras, números y símbolos</li>
-                  </ul>
-                </div>
+                <IfInformationUI>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <p className="text-sm text-blue-900">
+                      <strong>Requisitos de contraseña:</strong>
+                    </p>
+                    <ul className="text-sm text-blue-800 mt-2 space-y-1 list-disc list-inside">
+                      <li>Mínimo 6 caracteres</li>
+                      <li>Se recomienda usar una combinación de letras, números y símbolos</li>
+                    </ul>
+                  </div>
+                </IfInformationUI>
 
                 <div className="flex gap-3 pt-4">
                   <Button type="submit" className="flex-1">

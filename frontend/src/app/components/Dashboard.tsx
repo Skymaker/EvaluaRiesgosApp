@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { getWorkCenters, getEvaluations } from '../utils/storage';
 import { WorkCenter, RiskEvaluation } from '../types';
 import { getRiskLevelColor, getRiskLevelLabel } from '../utils/risk-utils';
+import { IfInformationUI } from '../contexts/UiPreferencesContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 
 export function Dashboard() {
@@ -119,8 +120,8 @@ export function Dashboard() {
           </CardHeader>
           <CardContent>
             {totalRisks > 0 ? (
-              <div key="bar-chart-wrapper">
-                <ResponsiveContainer width="100%" height={300}>
+              <div key="bar-chart-wrapper" className="h-[220px] w-full md:h-[300px]">
+                <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={levelData} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="name" />
@@ -135,7 +136,7 @@ export function Dashboard() {
                 </ResponsiveContainer>
               </div>
             ) : (
-              <div className="h-[300px] flex items-center justify-center text-gray-400">
+              <div className="flex h-[220px] items-center justify-center text-gray-400 md:h-[300px]">
                 No hay datos disponibles
               </div>
             )}
@@ -148,8 +149,8 @@ export function Dashboard() {
           </CardHeader>
           <CardContent>
             {totalRisks > 0 ? (
-              <div key="pie-chart-wrapper">
-                <ResponsiveContainer width="100%" height={300}>
+              <div key="pie-chart-wrapper" className="h-[220px] w-full md:h-[300px]">
+                <ResponsiveContainer width="100%" height="100%">
                   <PieChart margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
                     <Pie
                       data={categoryData}
@@ -171,7 +172,7 @@ export function Dashboard() {
                 </ResponsiveContainer>
               </div>
             ) : (
-              <div className="h-[300px] flex items-center justify-center text-gray-400">
+              <div className="flex h-[220px] items-center justify-center text-gray-400 md:h-[300px]">
                 No hay datos disponibles
               </div>
             )}
@@ -193,20 +194,21 @@ export function Dashboard() {
                   (evaluation.riesgosPuestos?.length || 0);
 
                 return (
-                  <div key={evaluation.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div className="flex-1">
+                  <div
+                    key={evaluation.id}
+                    className="flex flex-col gap-2 rounded-lg bg-gray-50 p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+                  >
+                    <div className="min-w-0 flex-1">
                       <div className="font-medium text-gray-900">{evaluation.workCenterName}</div>
                       <div className="text-sm text-gray-500">
                         {evaluation.evaluador} • {new Date(evaluation.fecha).toLocaleDateString('es-ES')}
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <div className="text-sm text-gray-600">
-                        {evaluationRisksCount} riesgos
-                      </div>
+                    <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-end">
+                      <div className="text-sm text-gray-600">{evaluationRisksCount} riesgos</div>
                       <Link
                         to={`/evaluaciones/${evaluation.id}`}
-                        className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                        className="text-sm font-medium text-blue-600 hover:text-blue-700"
                       >
                         Ver detalles
                       </Link>
@@ -225,26 +227,29 @@ export function Dashboard() {
 
       {/* Quick Actions */}
       {workCenters.length === 0 && (
-        <Card className="bg-blue-50 border-blue-200">
-          <CardContent className="pt-6">
-            <div className="flex items-start gap-4">
-              <CheckCircle className="w-6 h-6 text-blue-600 flex-shrink-0 mt-1" />
-              <div className="flex-1">
-                <h3 className="font-medium text-blue-900 mb-1">¡Comienza aquí!</h3>
-                <p className="text-sm text-blue-700 mb-3">
-                  Para empezar a realizar evaluaciones de riesgos, primero debes registrar tus centros de trabajo.
-                </p>
-                <Link
-                  to="/centros/nuevo"
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-                >
-                  <Building2 className="w-4 h-4" />
-                  Registrar Centro de Trabajo
-                </Link>
+        <IfInformationUI>
+          <Card className="border-blue-200 bg-blue-50">
+            <CardContent className="pt-6">
+              <div className="flex items-start gap-4">
+                <CheckCircle className="mt-1 h-6 w-6 flex-shrink-0 text-blue-600" />
+                <div className="flex-1">
+                  <h3 className="mb-1 font-medium text-blue-900">¡Comienza aquí!</h3>
+                  <p className="mb-3 text-sm text-blue-700">
+                    Para empezar a realizar evaluaciones de riesgos, primero debes registrar tus centros
+                    de trabajo.
+                  </p>
+                  <Link
+                    to="/centros/nuevo"
+                    className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+                  >
+                    <Building2 className="h-4 w-4" />
+                    Registrar Centro de Trabajo
+                  </Link>
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </IfInformationUI>
       )}
     </div>
   );

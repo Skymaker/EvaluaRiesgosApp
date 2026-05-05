@@ -25,25 +25,48 @@ export function WorkCenterForm() {
     puestosTrabajo: [],
   });
 
+  const loadCenterIntoForm = (centerId: string) => {
+    const centers = getWorkCenters();
+    const center = centers.find((c) => c.id === centerId);
+    if (center) {
+      setFormData({
+        nombre: center.nombre,
+        direccion: center.direccion,
+        ciudad: center.ciudad,
+        responsable: center.responsable,
+        telefono: center.telefono,
+        email: center.email,
+        numeroEmpleados: center.numeroEmpleados,
+        estructura: center.estructura || [],
+        puestosTrabajo: center.puestosTrabajo || [],
+      });
+    }
+  };
+
   useEffect(() => {
-    if (isEditing) {
-      const centers = getWorkCenters();
-      const center = centers.find(c => c.id === id);
-      if (center) {
-        setFormData({
-          nombre: center.nombre,
-          direccion: center.direccion,
-          ciudad: center.ciudad,
-          responsable: center.responsable,
-          telefono: center.telefono,
-          email: center.email,
-          numeroEmpleados: center.numeroEmpleados,
-          estructura: center.estructura || [],
-          puestosTrabajo: center.puestosTrabajo || [],
-        });
-      }
+    if (isEditing && id) {
+      loadCenterIntoForm(id);
     }
   }, [id, isEditing]);
+
+  const handleCancelNavigation = () => {
+    if (isEditing && id) {
+      loadCenterIntoForm(id);
+    } else {
+      setFormData({
+        nombre: '',
+        direccion: '',
+        ciudad: '',
+        responsable: '',
+        telefono: '',
+        email: '',
+        numeroEmpleados: 0,
+        estructura: [],
+        puestosTrabajo: [],
+      });
+    }
+    navigate('/centros');
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,7 +94,7 @@ export function WorkCenterForm() {
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="sm" onClick={() => navigate('/centros')}>
+        <Button variant="ghost" size="sm" onClick={handleCancelNavigation}>
           <ArrowLeft className="w-4 h-4" />
         </Button>
         <div>
@@ -189,7 +212,7 @@ export function WorkCenterForm() {
               <Button type="submit" className="flex-1">
                 {isEditing ? 'Actualizar Centro' : 'Registrar Centro'}
               </Button>
-              <Button type="button" variant="outline" onClick={() => navigate('/centros')}>
+              <Button type="button" variant="outline" onClick={handleCancelNavigation}>
                 Cancelar
               </Button>
             </div>

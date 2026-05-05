@@ -5,6 +5,10 @@
 - `frontend/`: aplicación React + Vite.
 - `backend/`: API Node.js/Express conectada a PostgreSQL.
 
+## Manual de usuario
+
+Fuentes Markdown y generador del documento Word en [`docs/manual/README.md`](docs/manual/README.md). El archivo generado es `docs/manual/Evaluapp-Manual-de-Usuario.docx`.
+
 ## Funcionalidades destacadas recientes
 
 - Recuperación automática por correo para cuentas de administrador tras 3 intentos fallidos en login.

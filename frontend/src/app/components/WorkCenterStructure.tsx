@@ -3,7 +3,8 @@ import { useNavigate, useParams, Link } from 'react-router';
 import { Building, ArrowLeft, Info, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
-import { getWorkCenters, saveWorkCenter } from '../utils/storage';
+import { getWorkCenters, saveWorkCenter, getEvaluations } from '../utils/storage';
+import { structureNodeDeletionBlockedByEvaluations } from '../utils/evaluation-references';
 import { WorkCenter, StructureNode, StructureNodeType } from '../types';
 import { HierarchicalStructureTree } from './HierarchicalStructureTree';
 import { StructureNodeModal } from './StructureNodeModal';
@@ -11,10 +12,36 @@ import {
   addNodeToTree,
   updateNodeInTree,
   deleteNodeFromTree,
+  findNodeById,
   countAllNodes,
   countAllRisks,
   calculateTotalArea,
 } from '../utils/structure-utils';
+
+const STRUCTURE_TYPE_CHILDREN: Record<StructureNodeType, StructureNodeType[]> = {
+  edificio: ['planta', 'elemento_comunicacion_vertical', 'generico'],
+  planta: [
+    'despacho',
+    'almacen',
+    'aseo',
+    'vestuario',
+    'taller',
+    'sala_reuniones',
+    'elemento_comunicacion_horizontal',
+    'generico',
+  ],
+  elemento_comunicacion_vertical: [],
+  elemento_comunicacion_horizontal: [],
+  despacho: ['puesto_trabajo'],
+  almacen: [],
+  aseo: [],
+  vestuario: [],
+  taller: ['estacion_trabajo'],
+  sala_reuniones: [],
+  puesto_trabajo: [],
+  estacion_trabajo: [],
+  generico: ['puesto_trabajo', 'estacion_trabajo', 'despacho', 'generico'],
+};
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,6 +53,7 @@ import {
   AlertDialogTitle,
 } from './ui/alert-dialog';
 import { toast } from 'sonner';
+import { IfInformationUI } from '../contexts/UiPreferencesContext';
 
 export function WorkCenterStructure() {
   const navigate = useNavigate();
@@ -51,48 +79,38 @@ export function WorkCenterStructure() {
     }
   }, [centerId]);
 
-  const handleAddChild = (parent: StructureNode | null, defaultType: StructureNodeType) => {
+  const closeStructureModal = () => {
+    setIsModalOpen(false);
+    setEditingNode(null);
+    setParentNode(null);
+    setAllowedTypes([]);
+  };
+
+  const handleAddChild = (parent: StructureNode | null, _defaultType: StructureNodeType) => {
     setParentNode(parent);
     setEditingNode(null);
 
-    // Determinar tipos permitidos
     if (!parent) {
       setAllowedTypes(['edificio']);
     } else {
-      const typeChildren: Record<StructureNodeType, StructureNodeType[]> = {
-        edificio: ['planta', 'elemento_comunicacion_vertical', 'generico'],
-        planta: [
-          'despacho',
-          'almacen',
-          'aseo',
-          'vestuario',
-          'taller',
-          'sala_reuniones',
-          'elemento_comunicacion_horizontal',
-          'generico',
-        ],
-        elemento_comunicacion_vertical: [],
-        elemento_comunicacion_horizontal: [],
-        despacho: ['puesto_trabajo'],
-        almacen: [],
-        aseo: [],
-        vestuario: [],
-        taller: ['estacion_trabajo'],
-        sala_reuniones: [],
-        puesto_trabajo: [],
-        estacion_trabajo: [],
-        generico: ['puesto_trabajo', 'estacion_trabajo', 'despacho', 'generico'],
-      };
-      setAllowedTypes(typeChildren[parent.tipo] || []);
+      setAllowedTypes(STRUCTURE_TYPE_CHILDREN[parent.tipo] || []);
     }
 
     setIsModalOpen(true);
   };
 
   const handleEdit = (node: StructureNode) => {
+    if (!workCenter) return;
+    const tree = workCenter.estructuraJerarquica || [];
+    const parent = node.parentId ? findNodeById(tree, node.parentId) : null;
     setEditingNode(node);
-    setParentNode(null);
-    setAllowedTypes([]);
+    setParentNode(parent);
+    if (!parent) {
+      // Raíz (sin parentId) → solo edificio; si hay parentId pero no se encontró el padre, al menos el tipo actual
+      setAllowedTypes(node.parentId ? [node.tipo] : ['edificio']);
+    } else {
+      setAllowedTypes(STRUCTURE_TYPE_CHILDREN[parent.tipo] || []);
+    }
     setIsModalOpen(true);
   };
 
@@ -102,6 +120,21 @@ export function WorkCenterStructure() {
 
   const confirmDelete = () => {
     if (!workCenter || !nodeToDelete) return;
+
+    if (
+      structureNodeDeletionBlockedByEvaluations(
+        getEvaluations(),
+        workCenter.id,
+        workCenter.estructuraJerarquica || [],
+        nodeToDelete.id,
+      )
+    ) {
+      toast.error(
+        'No se puede eliminar: hay riesgos en evaluaciones asociados a esta ubicación o a elementos que contiene.',
+      );
+      setNodeToDelete(null);
+      return;
+    }
 
     const updatedTree = deleteNodeFromTree(
       workCenter.estructuraJerarquica || [],
@@ -173,7 +206,7 @@ export function WorkCenterStructure() {
       toast.success('Elemento agregado correctamente');
     }
 
-    setIsModalOpen(false);
+    closeStructureModal();
   };
 
   if (!workCenter) {
@@ -190,38 +223,42 @@ export function WorkCenterStructure() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="sm" onClick={() => navigate('/centros')}>
-          <ArrowLeft className="w-4 h-4" />
+      <div className="flex min-w-0 items-start gap-3 sm:items-center sm:gap-4">
+        <Button variant="ghost" size="sm" className="shrink-0" onClick={() => navigate('/centros')}>
+          <ArrowLeft className="h-4 w-4" />
         </Button>
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-1">
-            <Building className="w-5 h-5 text-gray-400" />
-            <h2 className="text-2xl font-semibold text-gray-900">{workCenter.nombre}</h2>
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 flex items-center gap-2">
+            <Building className="h-5 w-5 shrink-0 text-gray-400" />
+            <h2 className="text-xl font-semibold text-gray-900 sm:text-2xl">{workCenter.nombre}</h2>
           </div>
-          <p className="text-gray-600">Estructura jerárquica del centro de trabajo</p>
+          <IfInformationUI>
+            <p className="text-gray-600">Estructura jerárquica del centro de trabajo</p>
+          </IfInformationUI>
         </div>
       </div>
 
       {/* Información */}
-      <Card className="bg-blue-50 border-blue-200">
-        <CardContent className="pt-6">
-          <div className="flex items-start gap-3">
-            <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-            <div className="text-sm text-blue-900">
-              <p className="font-medium mb-1">Estructura Jerárquica</p>
-              <p>
-                Organiza tu centro de trabajo en una estructura de árbol: Edificios → Plantas →
-                Espacios (Despachos, Talleres, etc.) → Puestos de Trabajo. Los riesgos se
-                asignarán desde el módulo de Evaluaciones.
-              </p>
+      <IfInformationUI>
+        <Card className="border-blue-200 bg-blue-50">
+          <CardContent className="pt-6">
+            <div className="flex items-start gap-3">
+              <Info className="mt-0.5 h-5 w-5 flex-shrink-0 text-blue-600" />
+              <div className="text-sm text-blue-900">
+                <p className="mb-1 font-medium">Estructura Jerárquica</p>
+                <p>
+                  Organiza tu centro de trabajo en una estructura de árbol: Edificios → Plantas →
+                  Espacios (Despachos, Talleres, etc.) → Puestos de Trabajo. Los riesgos se asignarán
+                  desde el módulo de Evaluaciones.
+                </p>
+              </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </IfInformationUI>
 
       {/* Estadísticas */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Card>
           <CardContent className="pt-6">
             <div className="text-center">
@@ -253,6 +290,14 @@ export function WorkCenterStructure() {
             onAddChild={handleAddChild}
             onEdit={handleEdit}
             onDelete={handleDelete}
+            isDeleteBlocked={(node) =>
+              structureNodeDeletionBlockedByEvaluations(
+                getEvaluations(),
+                workCenter.id,
+                hierarchicalStructure,
+                node.id,
+              )
+            }
           />
         </CardContent>
       </Card>
@@ -260,7 +305,7 @@ export function WorkCenterStructure() {
       {/* Modal de agregar/editar */}
       <StructureNodeModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={closeStructureModal}
         onSave={handleSave}
         parentNode={parentNode}
         editingNode={editingNode}

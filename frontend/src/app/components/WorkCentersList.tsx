@@ -25,14 +25,14 @@ export function WorkCentersList() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold text-gray-900">Centros de Trabajo</h2>
-          <p className="text-gray-600 mt-1">Gestiona los centros de trabajo registrados</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-xl font-semibold text-gray-900 sm:text-2xl">Centros de Trabajo</h2>
+          <p className="mt-1 text-gray-600">Gestiona los centros de trabajo registrados</p>
         </div>
-        <Link to="/centros/nuevo">
-          <Button className="flex items-center gap-2">
-            <Plus className="w-4 h-4" />
+        <Link to="/centros/nuevo" className="shrink-0 sm:self-start">
+          <Button className="flex w-full items-center justify-center gap-2 sm:w-auto">
+            <Plus className="h-4 w-4" />
             Nuevo Centro
           </Button>
         </Link>
@@ -43,19 +43,19 @@ export function WorkCentersList() {
           {workCenters.map((center) => (
             <Card key={center.id}>
               <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex items-start gap-3">
-                    <div className="bg-blue-100 p-2 rounded-lg">
-                      <Building2 className="w-5 h-5 text-blue-600" />
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex min-w-0 flex-1 items-start gap-3">
+                    <div className="shrink-0 rounded-lg bg-blue-100 p-2">
+                      <Building2 className="h-5 w-5 text-blue-600" />
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <CardTitle className="text-lg">{center.nombre}</CardTitle>
-                      <p className="text-sm text-gray-500 mt-1">
+                      <p className="mt-1 text-sm text-gray-500">
                         Registrado el {new Date(center.fechaCreacion).toLocaleDateString('es-ES')}
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex shrink-0 items-center justify-end gap-2 sm:justify-start">
                     <Link to={`/centros/editar/${center.id}`}>
                       <Button variant="ghost" size="sm">
                         <Edit className="w-4 h-4" />
@@ -105,9 +105,9 @@ export function WorkCentersList() {
                   <span className="text-gray-900">{center.telefono}</span>
                 </div>
                 
-                <div className="flex items-center gap-2 text-sm">
-                  <Mail className="w-4 h-4 text-gray-400" />
-                  <span className="text-gray-900">{center.email}</span>
+                <div className="flex items-start gap-2 text-sm">
+                  <Mail className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                  <span className="break-all text-gray-900">{center.email}</span>
                 </div>
                 
                 <div className="flex items-center gap-2 text-sm">
@@ -115,17 +115,17 @@ export function WorkCentersList() {
                   <span className="text-gray-900">{center.numeroEmpleados} empleados</span>
                 </div>
 
-                <div className="pt-3 border-t border-gray-200">
-                  <div className="grid grid-cols-2 gap-2">
+                <div className="border-t border-gray-200 pt-3">
+                  <div className="grid grid-cols-1 gap-2 min-[380px]:grid-cols-2">
                     <Link to={`/centros/${center.id}/estructura`}>
                       <Button variant="outline" className="w-full text-sm">
-                        <LayoutIcon className="w-4 h-4 mr-2" />
+                        <LayoutIcon className="mr-2 h-4 w-4 shrink-0" />
                         Estructura
                       </Button>
                     </Link>
                     <Link to={`/centros/${center.id}/puestos`}>
                       <Button variant="outline" className="w-full text-sm">
-                        <Briefcase className="w-4 h-4 mr-2" />
+                        <Briefcase className="mr-2 h-4 w-4 shrink-0" />
                         Puestos
                       </Button>
                     </Link>

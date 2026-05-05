@@ -76,7 +76,7 @@ export function Login() {
                   className="w-full h-full object-contain"
                 />
               </div>
-              <h1 className="text-[30px] font-bold text-[#101828] text-center leading-9">
+              <h1 className="text-center text-2xl font-bold leading-8 text-[#101828] sm:text-[30px] sm:leading-9">
                 Evauapp
               </h1>
               <p className="text-[16px] text-[#4a5565] text-center mt-4 leading-6">

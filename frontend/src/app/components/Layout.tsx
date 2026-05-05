@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router';
 import { Building2, FileText, BarChart3, Users, LogOut, User as UserIcon, Printer, UserCog, Settings, Menu } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useUnsavedEvaluationGuard } from '../contexts/UnsavedEvaluationGuardContext';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { hasPermission } from '../utils/auth-storage';
@@ -20,11 +21,14 @@ export function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const { runWithLeaveGuard } = useUnsavedEvaluationGuard();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const handleLogout = () => {
-    logout();
-    navigate('/iniciar-sesion');
+    runWithLeaveGuard(() => {
+      logout();
+      navigate('/iniciar-sesion');
+    }, 'logout');
   };
 
   const navItems = [
@@ -77,23 +81,25 @@ export function Layout() {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12">
+        <div className="container mx-auto px-4 py-3 md:py-4">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+              <div className="h-10 w-10 shrink-0 sm:h-12 sm:w-12">
                 <img
                   src={logoImage}
                   alt="Logo Sistema de Evaluación"
-                  className="w-full h-full object-contain"
+                  className="h-full w-full object-contain"
                 />
               </div>
-              <div>
-                <h1 className="font-semibold text-gray-900">Evaluapp</h1>
-                <p className="text-sm text-gray-500">Sistema de Evaluación de Riesgos Laborales</p>
+              <div className="min-w-0">
+                <h1 className="truncate text-base font-semibold text-gray-900 sm:text-lg">Evaluapp</h1>
+                <p className="hidden text-sm text-gray-500 sm:block">
+                  Sistema de Evaluación de Riesgos Laborales
+                </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2">
               {user && (
                 <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
                   <SheetTrigger asChild>
@@ -102,9 +108,16 @@ export function Layout() {
                     </Button>
                   </SheetTrigger>
                   <SheetContent side="left" className="p-0">
-                    <SheetHeader className="border-b border-gray-200">
+                    <SheetHeader className="border-b border-gray-200 px-4 pb-4 pt-4 text-left">
                       <SheetTitle>Menú de navegación</SheetTitle>
                       <SheetDescription>Accede a todas las secciones disponibles.</SheetDescription>
+                      <div className="mt-4 rounded-md border border-gray-100 bg-gray-50 p-3">
+                        <div className="truncate text-sm font-medium text-gray-900">{user.nombre}</div>
+                        <div className="mt-0.5 truncate text-xs text-gray-500">{user.email}</div>
+                        <Badge className={`${getRoleBadgeColor(user.role)} mt-2 w-fit`}>
+                          {getRoleLabel(user.role)}
+                        </Badge>
+                      </div>
                     </SheetHeader>
                     <div className="px-2 py-3">
                       {navItems.map((item) => {
@@ -192,6 +205,16 @@ export function Layout() {
               )}
             </div>
           </div>
+
+          {user && (
+            <div className="mt-2 flex items-center gap-2 border-t border-gray-100 pt-2 md:hidden">
+              <UserIcon className="h-4 w-4 shrink-0 text-gray-400" />
+              <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-800">{user.nombre}</span>
+              <Badge className={`${getRoleBadgeColor(user.role)} shrink-0 text-xs`}>
+                {getRoleLabel(user.role)}
+              </Badge>
+            </div>
+          )}
         </div>
       </header>
 
@@ -223,7 +246,7 @@ export function Layout() {
       </nav>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-8">
+      <main className="container mx-auto px-4 py-6 md:py-8">
         <Outlet />
       </main>
     </div>

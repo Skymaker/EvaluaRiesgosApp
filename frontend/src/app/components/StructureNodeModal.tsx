@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from './ui/select';
 import { toast } from 'sonner';
+import { getEffectiveNodeArea } from '../utils/structure-utils';
 
 interface StructureNodeModalProps {
   isOpen: boolean;
@@ -46,7 +47,10 @@ export function StructureNodeModal({
     tipo: (editingNode?.tipo || allowedTypes?.[0] || 'edificio') as StructureNodeType,
     nombre: editingNode?.nombre || '',
     descripcion: editingNode?.descripcion || '',
-    superficie: editingNode?.superficie?.toString() || '',
+    superficie:
+      editingNode && editingNode.children?.length
+        ? String(getEffectiveNodeArea(editingNode))
+        : editingNode?.superficie?.toString() || '',
     capacidad: editingNode?.metadata?.capacidad?.toString() || '',
     numeroPlanta: editingNode?.metadata?.numeroPlanta?.toString() || '',
     tipoElemento: editingNode?.metadata?.tipoElemento || '',
@@ -58,7 +62,9 @@ export function StructureNodeModal({
         tipo: editingNode.tipo,
         nombre: editingNode.nombre,
         descripcion: editingNode.descripcion,
-        superficie: editingNode.superficie?.toString() || '',
+        superficie: editingNode.children?.length
+          ? String(getEffectiveNodeArea(editingNode))
+          : editingNode.superficie?.toString() || '',
         capacidad: editingNode.metadata?.capacidad?.toString() || '',
         numeroPlanta: editingNode.metadata?.numeroPlanta?.toString() || '',
         tipoElemento: editingNode.metadata?.tipoElemento || '',
@@ -98,6 +104,10 @@ export function StructureNodeModal({
   const getAvailableTypes = (): StructureNodeType[] => {
     if (allowedTypes && allowedTypes.length > 0) {
       return allowedTypes;
+    }
+
+    if (isEditing && editingNode) {
+      return [editingNode.tipo];
     }
 
     if (!parentNode) {
@@ -140,14 +150,26 @@ export function StructureNodeModal({
       return;
     }
 
+    const superficieFromChildren =
+      isEditing &&
+      editingNode &&
+      editingNode.children &&
+      editingNode.children.length > 0
+        ? getEffectiveNodeArea(editingNode)
+        : undefined;
+
     const nodeData: Partial<StructureNode> = {
       ...(isEditing && { id: editingNode.id }),
       workCenterId,
       tipo: formData.tipo,
       nombre: formData.nombre.trim(),
       descripcion: formData.descripcion.trim(),
-      superficie: formData.superficie ? parseFloat(formData.superficie) : undefined,
-      parentId: parentNode?.id,
+      superficie:
+        superficieFromChildren !== undefined
+          ? superficieFromChildren
+          : formData.superficie
+            ? parseFloat(formData.superficie)
+            : undefined,
       metadata: {},
     };
 
@@ -167,7 +189,6 @@ export function StructureNodeModal({
     onSave(nodeData);
     onClose();
 
-    // Resetear formulario
     setFormData({
       tipo: allowedTypes?.[0] || 'edificio',
       nombre: '',
@@ -180,9 +201,11 @@ export function StructureNodeModal({
   };
 
   const availableTypes = getAvailableTypes();
+  const editingHasChildren =
+    isEditing && !!editingNode?.children?.length;
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
@@ -252,7 +275,7 @@ export function StructureNodeModal({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {/* Superficie */}
             <div className="space-y-2">
               <Label htmlFor="superficie">Superficie (m²)</Label>
@@ -263,7 +286,19 @@ export function StructureNodeModal({
                 value={formData.superficie}
                 onChange={(e) => setFormData({ ...formData, superficie: e.target.value })}
                 placeholder="150.5"
+                disabled={editingHasChildren}
+                readOnly={editingHasChildren}
+                title={
+                  editingHasChildren
+                    ? 'La superficie de un elemento con hijos es la suma de las superficies de sus hijos'
+                    : undefined
+                }
               />
+              {editingHasChildren && (
+                <p className="text-xs text-muted-foreground">
+                  Calculada automáticamente como la suma de las superficies de los elementos hijos.
+                </p>
+              )}
             </div>
 
             {/* Campos específicos por tipo */}

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import { Briefcase, ArrowLeft, Save } from 'lucide-react';
+import { ArrowLeft, Save } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -11,6 +11,7 @@ import { getWorkCenters, saveWorkCenter } from '../utils/storage';
 import { getJobCategories, getJobCategoryById } from '../utils/job-storage';
 import { WorkCenter, JobPositionInstance, JobPositionCategory } from '../types';
 import { toast } from 'sonner';
+import { IfInformationUI } from '../contexts/UiPreferencesContext';
 
 export function WorkCenterPositionForm() {
   const navigate = useNavigate();
@@ -27,29 +28,42 @@ export function WorkCenterPositionForm() {
     observaciones: '',
   });
 
+  const loadFromStorage = () => {
+    if (!centerId) {
+      return;
+    }
+    const centers = getWorkCenters();
+    const center = centers.find((c) => c.id === centerId);
+    setWorkCenter(center || null);
+    setCategories(getJobCategories());
+
+    if (isEditing && positionId && center) {
+      const position = center.puestosTrabajo.find((p) => p.id === positionId);
+      if (position) {
+        setFormData({
+          categoryId: position.categoryId,
+          numeroEmpleados: position.numeroEmpleados,
+          observaciones: position.observaciones,
+        });
+        setSelectedCategory(getJobCategoryById(position.categoryId) || null);
+      } else {
+        setFormData({ categoryId: '', numeroEmpleados: 1, observaciones: '' });
+        setSelectedCategory(null);
+      }
+    } else {
+      setFormData({ categoryId: '', numeroEmpleados: 1, observaciones: '' });
+      setSelectedCategory(null);
+    }
+  };
 
   useEffect(() => {
-    if (centerId) {
-      const centers = getWorkCenters();
-      const center = centers.find(c => c.id === centerId);
-      setWorkCenter(center || null);
-      setCategories(getJobCategories());
-
-      if (isEditing && positionId && center) {
-        const position = center.puestosTrabajo.find(p => p.id === positionId);
-        if (position) {
-          setFormData({
-            categoryId: position.categoryId,
-            numeroEmpleados: position.numeroEmpleados,
-            observaciones: position.observaciones,
-          });
-          
-          const cat = getJobCategoryById(position.categoryId);
-          setSelectedCategory(cat || null);
-        }
-      }
-    }
+    loadFromStorage();
   }, [centerId, positionId, isEditing]);
+
+  const handleCancelNavigation = () => {
+    loadFromStorage();
+    navigate(`/centros/${centerId}/puestos`);
+  };
 
   const handleCategoryChange = (categoryId: string) => {
     setFormData({ ...formData, categoryId });
@@ -102,7 +116,7 @@ export function WorkCenterPositionForm() {
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="sm" onClick={() => navigate(`/centros/${centerId}/puestos`)}>
+        <Button variant="ghost" size="sm" onClick={handleCancelNavigation}>
           <ArrowLeft className="w-4 h-4" />
         </Button>
         <div>
@@ -174,54 +188,59 @@ export function WorkCenterPositionForm() {
 
         {/* Información de la Categoría */}
         {selectedCategory && (
-          <Card className="bg-blue-50 border-blue-200">
-            <CardHeader>
-              <CardTitle className="text-blue-900">
-                Elementos Genéricos de "{selectedCategory.nombre}"
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-3 gap-4 text-center">
-                <div className="bg-white p-3 rounded-lg">
-                  <div className="text-xl font-bold text-gray-900">
-                    {selectedCategory.actividades.length}
+          <IfInformationUI>
+            <Card className="border-blue-200 bg-blue-50">
+              <CardHeader>
+                <CardTitle className="text-blue-900">
+                  Elementos Genéricos de "{selectedCategory.nombre}"
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 gap-3 text-center min-[400px]:grid-cols-3 sm:gap-4">
+                  <div className="rounded-lg bg-white p-3">
+                    <div className="text-xl font-bold text-gray-900">
+                      {selectedCategory.actividades.length}
+                    </div>
+                    <div className="mt-1 text-xs text-gray-600">Actividades</div>
                   </div>
-                  <div className="text-xs text-gray-600 mt-1">Actividades</div>
-                </div>
-                <div className="bg-white p-3 rounded-lg">
-                  <div className="text-xl font-bold text-orange-900">
-                    {selectedCategory.riesgosGenericos.length}
+                  <div className="rounded-lg bg-white p-3">
+                    <div className="text-xl font-bold text-orange-900">
+                      {selectedCategory.riesgosGenericos.length}
+                    </div>
+                    <div className="mt-1 text-xs text-orange-700">Riesgos Genéricos</div>
                   </div>
-                  <div className="text-xs text-orange-700 mt-1">Riesgos Genéricos</div>
-                </div>
-                <div className="bg-white p-3 rounded-lg">
-                  <div className="text-xl font-bold text-blue-900">
-                    {selectedCategory.episGenericos.length}
+                  <div className="rounded-lg bg-white p-3">
+                    <div className="text-xl font-bold text-blue-900">
+                      {selectedCategory.episGenericos.length}
+                    </div>
+                    <div className="mt-1 text-xs text-blue-700">EPIs Genéricos</div>
                   </div>
-                  <div className="text-xs text-blue-700 mt-1">EPIs Genéricos</div>
                 </div>
-              </div>
-              <p className="text-sm text-blue-800 mt-4">
-                Estos elementos están definidos en la categoría. Los riesgos se asignarán en la evaluación.
-              </p>
-            </CardContent>
-          </Card>
+                <p className="mt-4 text-sm text-blue-800">
+                  Estos elementos están definidos en la categoría. Los riesgos se asignarán en la
+                  evaluación.
+                </p>
+              </CardContent>
+            </Card>
+          </IfInformationUI>
         )}
 
         {/* Información adicional */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Información Adicional</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <p className="text-sm text-blue-900">
-                Los riesgos genéricos de esta categoría se asignarán automáticamente cuando realices una evaluación.
-                Los EPIs y actividades están definidos en la categoría del puesto.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+        <IfInformationUI>
+          <Card>
+            <CardHeader>
+              <CardTitle>Información Adicional</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+                <p className="text-sm text-blue-900">
+                  Los riesgos genéricos de esta categoría se asignarán automáticamente cuando realices
+                  una evaluación. Los EPIs y actividades están definidos en la categoría del puesto.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </IfInformationUI>
 
 
         {/* Acciones */}
@@ -230,11 +249,7 @@ export function WorkCenterPositionForm() {
             <Save className="w-4 h-4 mr-2" />
             {isEditing ? 'Actualizar Puesto' : 'Asignar Puesto'}
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => navigate(`/centros/${centerId}/puestos`)}
-          >
+          <Button type="button" variant="outline" onClick={handleCancelNavigation}>
             Cancelar
           </Button>
         </div>

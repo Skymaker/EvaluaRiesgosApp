@@ -96,13 +96,20 @@ export function countAllRisks(nodes: StructureNode[]): number {
   }, 0);
 }
 
-// Función para calcular superficie total (incluyendo hijos)
+/**
+ * Superficie efectiva para un nodo: si tiene hijos, suma de las superficies efectivas
+ * de los hijos; si no, la superficie propia del nodo.
+ */
+export function getEffectiveNodeArea(node: StructureNode): number {
+  if (node.children && node.children.length > 0) {
+    return node.children.reduce((sum, child) => sum + getEffectiveNodeArea(child), 0);
+  }
+  return node.superficie ?? 0;
+}
+
+// Superficie total del árbol (sin doble conteo: cada unidad solo cuenta en su hoja o agregado)
 export function calculateTotalArea(nodes: StructureNode[]): number {
-  return nodes.reduce((total, node) => {
-    const nodeArea = node.superficie || 0;
-    const childArea = node.children ? calculateTotalArea(node.children) : 0;
-    return total + nodeArea + childArea;
-  }, 0);
+  return nodes.reduce((total, node) => total + getEffectiveNodeArea(node), 0);
 }
 
 // Función para aplanar el árbol en una lista

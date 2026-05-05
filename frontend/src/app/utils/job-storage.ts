@@ -1,5 +1,7 @@
 import { JobPositionCategory } from '../types';
 import { apiRequest } from './api-client';
+import { getEvaluations, getWorkCenters, saveEvaluation } from './storage';
+import { syncEvaluationJobPositionGenericsFromCategories } from './evaluation-assignments';
 
 let categoriesCache: JobPositionCategory[] = [];
 
@@ -22,6 +24,17 @@ export const saveJobCategory = (category: JobPositionCategory): void => {
     categories.push(category);
   }
   categoriesCache = categories;
+
+  const centers = getWorkCenters();
+  const evaluations = getEvaluations();
+  for (const ev of evaluations) {
+    const center = centers.find((c) => c.id === ev.workCenterId);
+    const updated = syncEvaluationJobPositionGenericsFromCategories(ev, center, categories);
+    if (updated !== ev) {
+      saveEvaluation(updated);
+    }
+  }
+
   void apiRequest(`/categorias-puestos/${category.id}`, {
     method: 'PUT',
     body: JSON.stringify(category),

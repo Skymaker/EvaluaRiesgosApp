@@ -1,4 +1,29 @@
-import { RiskLevel, RiskCategory } from '../types';
+import { RiskLevel, RiskCategory, Risk } from '../types';
+
+const RISK_LEVEL_RANK: Record<RiskLevel, number> = {
+  trivial: 1,
+  tolerable: 2,
+  moderado: 3,
+  importante: 4,
+  intolerable: 5,
+};
+
+/** Mayor valor = riesgo más alto (útil para ordenar de mayor a menor). */
+export function getRiskLevelRank(level: RiskLevel): number {
+  return RISK_LEVEL_RANK[level] ?? 0;
+}
+
+/** Orden: nivel de riesgo (mayor primero), luego tipo (categoría), luego descripción. */
+export function compareRisksByLevelDescThenCategory(a: Risk, b: Risk): number {
+  const ra = getRiskLevelRank(a.nivel);
+  const rb = getRiskLevelRank(b.nivel);
+  if (rb !== ra) return rb - ra;
+  const ca = getCategoryLabel(a.categoria);
+  const cb = getCategoryLabel(b.categoria);
+  const ccmp = ca.localeCompare(cb, 'es', { sensitivity: 'base' });
+  if (ccmp !== 0) return ccmp;
+  return a.descripcion.localeCompare(b.descripcion, 'es', { sensitivity: 'base' });
+}
 
 export const getRiskLevelColor = (level: RiskLevel): string => {
   const colors: Record<RiskLevel, string> = {
@@ -83,12 +108,32 @@ export const getConsecuenciasLabel = (consecuencias: number): string => {
   return labels[consecuencias] || 'Dañino';
 };
 
+/** Orden visual: izquierda → centro → derecha (selector de 3 posiciones). */
+export const EVALUATION_ESTADOS_TRIPLES = ['revision', 'en_progreso', 'completada'] as const;
+export type EvaluationEstadoTriple = (typeof EVALUATION_ESTADOS_TRIPLES)[number];
+
+export function normalizeEvaluationEstadoForForm(state: string): EvaluationEstadoTriple {
+  if (state === 'revision' || state === 'en_progreso' || state === 'completada') {
+    return state;
+  }
+  return 'en_progreso';
+}
+
+export function estadoToSliderIndex(state: string): number {
+  return EVALUATION_ESTADOS_TRIPLES.indexOf(normalizeEvaluationEstadoForForm(state));
+}
+
+export function sliderIndexToEstado(index: number): EvaluationEstadoTriple {
+  const clamped = Math.max(0, Math.min(2, Math.round(index)));
+  return EVALUATION_ESTADOS_TRIPLES[clamped];
+}
+
 export const getStateLabel = (state: string): string => {
   const labels: Record<string, string> = {
     pendiente: 'Pendiente',
-    en_progreso: 'En Progreso',
+    en_progreso: 'En progreso',
     completada: 'Completada',
-    revision: 'En Revisión',
+    revision: 'En revisión',
   };
   return labels[state] || state;
 };

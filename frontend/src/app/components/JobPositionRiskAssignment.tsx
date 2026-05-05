@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   JobPositionInstance,
   Risk,
@@ -17,16 +17,25 @@ import { Briefcase, Plus, Trash2, AlertTriangle, Info, Edit, X } from 'lucide-re
 import {
   calculateRiskLevel,
   getCategoryLabel,
+  getConsecuenciasLabel,
+  getProbabilidadLabel,
   getRiskLevelColor,
   getRiskLevelLabel,
 } from '../utils/risk-utils';
 import { toast } from 'sonner';
+import { IfInformationUI } from '../contexts/UiPreferencesContext';
+import { syncJobPositionGenericRisksWithCategories } from '../utils/evaluation-assignments';
 
 interface JobPositionRiskAssignmentProps {
   jobPositions: JobPositionInstance[];
   jobCategories: JobPositionCategory[];
   assignments: JobPositionRiskAssignment[];
   onUpdate: (assignments: JobPositionRiskAssignment[]) => void;
+  /**
+   * En evaluación nueva, true: inyectar genéricos de categoría y permitir quitarlos de esta evaluación.
+   * En edición, false: los genéricos se sincronizan con las categorías (no editar ni borrar aquí).
+   */
+  enableAutoGenericRisks?: boolean;
 }
 
 export function JobPositionRiskAssignmentComponent({
@@ -34,6 +43,7 @@ export function JobPositionRiskAssignmentComponent({
   jobCategories,
   assignments,
   onUpdate,
+  enableAutoGenericRisks = true,
 }: JobPositionRiskAssignmentProps) {
   const [selectedPositionId, setSelectedPositionId] = useState<string>('');
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -46,13 +56,39 @@ export function JobPositionRiskAssignmentComponent({
   });
   const [genericRisksLoaded, setGenericRisksLoaded] = useState(false);
 
-  // Cargar riesgos genéricos automáticamente
-  useEffect(() => {
-    if (jobPositions.length > 0 && !genericRisksLoaded) {
-      loadGenericRisks();
-      setGenericRisksLoaded(true);
+  const syncedAssignments = useMemo(() => {
+    if (enableAutoGenericRisks) {
+      return assignments;
     }
-  }, [jobPositions, genericRisksLoaded]);
+    const synced = syncJobPositionGenericRisksWithCategories(
+      assignments,
+      jobPositions,
+      jobCategories,
+    );
+    return JSON.stringify(synced) === JSON.stringify(assignments) ? assignments : synced;
+  }, [assignments, jobPositions, jobCategories, enableAutoGenericRisks]);
+
+  useEffect(() => {
+    if (enableAutoGenericRisks) {
+      return;
+    }
+    if (syncedAssignments !== assignments) {
+      onUpdate(syncedAssignments);
+    }
+  }, [enableAutoGenericRisks, assignments, syncedAssignments, onUpdate]);
+
+  // Cargar riesgos genéricos solo en evaluación nueva (no al editar: los datos guardados ya incluyen plantillas)
+  useEffect(() => {
+    if (
+      !enableAutoGenericRisks ||
+      jobPositions.length === 0 ||
+      genericRisksLoaded
+    ) {
+      return;
+    }
+    loadGenericRisks();
+    setGenericRisksLoaded(true);
+  }, [jobPositions, genericRisksLoaded, enableAutoGenericRisks]);
 
   const loadGenericRisks = () => {
     const genericAssignments: JobPositionRiskAssignment[] = [];
@@ -61,9 +97,9 @@ export function JobPositionRiskAssignmentComponent({
       const category = jobCategories.find((c) => c.id === position.categoryId);
       if (category && category.riesgosGenericos) {
         category.riesgosGenericos.forEach((risk) => {
-          // Verificar que no esté ya agregado
+          // Misma posición + mismo id de riesgo (genérico o ya guardado), no duplicar
           const alreadyExists = assignments.some(
-            (a) => a.jobPositionId === position.id && a.risk.id === risk.id && a.isGeneric
+            (a) => a.jobPositionId === position.id && a.risk.id === risk.id,
           );
 
           if (!alreadyExists) {
@@ -170,6 +206,13 @@ export function JobPositionRiskAssignmentComponent({
   };
 
   const handleRemoveAssignment = (index: number) => {
+    const row = assignments[index];
+    if (!enableAutoGenericRisks && row?.isGeneric) {
+      toast.error(
+        'Los riesgos genéricos no se pueden eliminar desde la evaluación. Edítalos o bórralos en Puestos de trabajo (categorías).',
+      );
+      return;
+    }
     const updated = assignments.filter((_, i) => i !== index);
     onUpdate(updated);
     toast.success('Riesgo eliminado');
@@ -179,9 +222,6 @@ export function JobPositionRiskAssignmentComponent({
     currentRisk.probabilidad || 2,
     currentRisk.consecuencias || 2
   );
-
-  // Debug: Log de assignments recibidos
-  console.log('💼 JobPositionRiskAssignment - assignments recibidos:', assignments.length, assignments);
 
   // Agrupar por puesto
   const groupedByPosition = assignments.reduce(
@@ -225,23 +265,34 @@ export function JobPositionRiskAssignmentComponent({
         ) : (
           <>
             {/* Información */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <div className="flex items-start gap-3">
-                <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                <div className="text-sm text-blue-900">
-                  <p className="font-medium mb-1">Riesgos Genéricos y Específicos</p>
-                  <ul className="list-disc list-inside space-y-1 text-xs">
-                    <li>
-                      <strong>Genéricos:</strong> Se cargan automáticamente de las categorías de puestos
-                    </li>
-                    <li>
-                      <strong>Específicos:</strong> Riesgos adicionales propios de este centro de
-                      trabajo
-                    </li>
-                  </ul>
+            <IfInformationUI>
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+                <div className="flex items-start gap-3">
+                  <Info className="mt-0.5 h-5 w-5 flex-shrink-0 text-blue-600" />
+                  <div className="text-sm text-blue-900">
+                    <p className="mb-1 font-medium">Riesgos Genéricos y Específicos</p>
+                    <ul className="list-inside list-disc space-y-1 text-xs">
+                      <li>
+                        <strong>Genéricos:</strong> Se cargan automáticamente de las categorías de
+                        puestos
+                      </li>
+                      <li>
+                        <strong>Específicos:</strong> Riesgos adicionales propios de este centro de
+                        trabajo
+                      </li>
+                      {!enableAutoGenericRisks && (
+                        <li>
+                          <strong>Al editar la evaluación:</strong> los genéricos coinciden con las
+                          categorías y no se pueden editar ni eliminar aquí. Hazlo en{' '}
+                          <span className="font-medium">Puestos de trabajo</span>; los cambios se
+                          aplican a las evaluaciones que usen esos puestos.
+                        </li>
+                      )}
+                    </ul>
+                  </div>
                 </div>
               </div>
-            </div>
+            </IfInformationUI>
 
             {/* Formulario de asignación de riesgos específicos */}
             <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
@@ -277,7 +328,7 @@ export function JobPositionRiskAssignmentComponent({
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Categoría del Riesgo</Label>
                   <Select
@@ -320,7 +371,7 @@ export function JobPositionRiskAssignmentComponent({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Probabilidad (1-3): {currentRisk.probabilidad}</Label>
                   <Input
@@ -387,55 +438,33 @@ export function JobPositionRiskAssignmentComponent({
             {assignments.length > 0 && (
               <div className="space-y-4">
                 <h3 className="font-medium text-gray-900">Riesgos Asignados por Puesto:</h3>
-                {Object.values(groupedByPosition).map((group, groupIndex) => (
-                  <div
-                    key={groupIndex}
-                    className="border border-gray-200 rounded-lg p-4 space-y-3"
-                  >
+                {Object.entries(groupedByPosition).map(([positionId, group]) => (
+                  <div key={positionId} className="space-y-3 rounded-lg border border-gray-200 p-4">
                     <div className="flex items-start gap-2 text-sm">
-                      <Briefcase className="w-4 h-4 text-purple-600 mt-0.5 flex-shrink-0" />
+                      <Briefcase className="mt-0.5 h-4 w-4 shrink-0 text-purple-600" />
                       <div className="font-medium text-gray-900">{group.positionName}</div>
                     </div>
 
-                    <div className="space-y-2 ml-6">
+                    <div className="ml-6 space-y-2">
                       {group.assignments.map(({ assignment, originalIndex }) => (
                         <div
                           key={originalIndex}
-                          className="p-3 bg-white border border-gray-200 rounded-lg"
+                          className="w-full space-y-2 rounded-lg border border-gray-200 bg-white p-3"
                         >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex-1 space-y-1">
-                              <div className="flex items-center gap-2">
-                                {assignment.isGeneric && (
-                                  <Badge variant="secondary" className="text-xs">
-                                    Genérico
-                                  </Badge>
-                                )}
-                                {!assignment.isGeneric && (
-                                  <Badge variant="default" className="text-xs">
-                                    Específico
-                                  </Badge>
-                                )}
-                                <Badge className={getRiskLevelColor(assignment.risk.nivel)}>
-                                  {getRiskLevelLabel(assignment.risk.nivel)}
+                          {/* Línea 1: solo genérico / específico + acciones (equivalente a categoría + acciones en ubicación) */}
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="min-w-0 text-sm font-medium text-gray-900">
+                              {assignment.isGeneric ? (
+                                <Badge variant="secondary" className="text-xs font-medium">
+                                  Genérico
                                 </Badge>
-                                <Badge variant="outline">
-                                  {getCategoryLabel(assignment.risk.categoria)}
+                              ) : (
+                                <Badge variant="default" className="text-xs font-medium">
+                                  Específico
                                 </Badge>
-                                <span className="text-xs text-gray-500">
-                                  P: {assignment.risk.probabilidad} | C:{' '}
-                                  {assignment.risk.consecuencias}
-                                </span>
-                              </div>
-                              <p className="text-sm text-gray-900">{assignment.risk.descripcion}</p>
-                              {assignment.risk.medidasControl && (
-                                <p className="text-xs text-gray-600 bg-blue-50 p-2 rounded">
-                                  <span className="font-medium">Medidas:</span>{' '}
-                                  {assignment.risk.medidasControl}
-                                </p>
                               )}
-                            </div>
-                            <div className="flex items-center gap-1">
+                            </span>
+                            <div className="flex shrink-0 items-center gap-0.5">
                               {!assignment.isGeneric && (
                                 <Button
                                   type="button"
@@ -444,20 +473,51 @@ export function JobPositionRiskAssignmentComponent({
                                   onClick={() => handleEditRisk(originalIndex)}
                                   title="Editar riesgo"
                                 >
-                                  <Edit className="w-4 h-4 text-blue-600" />
+                                  <Edit className="h-4 w-4 text-blue-600" />
                                 </Button>
                               )}
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleRemoveAssignment(originalIndex)}
-                                title="Eliminar riesgo"
-                              >
-                                <Trash2 className="w-4 h-4 text-red-600" />
-                              </Button>
+                              {(enableAutoGenericRisks || !assignment.isGeneric) && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleRemoveAssignment(originalIndex)}
+                                  title="Eliminar riesgo"
+                                >
+                                  <Trash2 className="h-4 w-4 text-red-600" />
+                                </Button>
+                              )}
                             </div>
                           </div>
+                          {/* Línea 2: categoría del riesgo + misma fila P/C + nivel que en ubicación */}
+                          <div className="space-y-1">
+                            <span className="text-xs font-medium text-gray-800">
+                              {getCategoryLabel(assignment.risk.categoria)}
+                            </span>
+                            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                              <span className="min-w-0 shrink text-xs text-gray-600 sm:hidden">
+                                P: {assignment.risk.probabilidad} - C: {assignment.risk.consecuencias}
+                              </span>
+                              <span className="hidden min-w-0 text-xs text-gray-600 sm:inline">
+                                Probabilidad: {getProbabilidadLabel(assignment.risk.probabilidad)} ·
+                                Consecuencias: {getConsecuenciasLabel(assignment.risk.consecuencias)}
+                              </span>
+                              <Badge className={`${getRiskLevelColor(assignment.risk.nivel)} shrink-0`}>
+                                {getRiskLevelLabel(assignment.risk.nivel)}
+                              </Badge>
+                            </div>
+                          </div>
+                          {/* Línea 3: descripción a ancho completo */}
+                          <p className="w-full text-sm leading-snug text-gray-900">
+                            {assignment.risk.descripcion}
+                          </p>
+                          {/* Línea 4: medidas a ancho completo */}
+                          {assignment.risk.medidasControl ? (
+                            <p className="w-full rounded-md bg-blue-50 p-2 text-xs leading-snug text-gray-700">
+                              <span className="font-medium text-gray-800">Medidas: </span>
+                              {assignment.risk.medidasControl}
+                            </p>
+                          ) : null}
                         </div>
                       ))}
                     </div>

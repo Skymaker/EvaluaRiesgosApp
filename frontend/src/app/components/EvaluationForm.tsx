@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams, useParams } from 'react-router';
-import { FileText, ArrowLeft, Save } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { flushSync } from 'react-dom';
+import { useBlocker, useNavigate, useParams, useSearchParams } from 'react-router';
+import { ArrowLeft, Save } from 'lucide-react';
+import { Slider } from './ui/slider';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -19,10 +21,88 @@ import {
 import { StructureRiskAssignmentComponent } from './StructureRiskAssignment';
 import { JobPositionRiskAssignmentComponent } from './JobPositionRiskAssignment';
 import { getJobCategories } from '../utils/job-storage';
+import {
+  enrichStructureRiskAssignments,
+  enrichJobPositionRiskAssignments,
+  syncJobPositionGenericRisksWithCategories,
+} from '../utils/evaluation-assignments';
 import { toast } from 'sonner';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './ui/alert-dialog';
+import {
+  useUnsavedEvaluationGuard,
+  type EvaluationLeaveReason,
+} from '../contexts/UnsavedEvaluationGuardContext';
+import { IfInformationUI, useUiPreferences } from '../contexts/UiPreferencesContext';
+import {
+  estadoToSliderIndex,
+  normalizeEvaluationEstadoForForm,
+  sliderIndexToEstado,
+  getStateColor,
+} from '../utils/risk-utils';
+import { useAuth } from '../contexts/AuthContext';
+
+const DEFAULT_EVALUATOR_CARGO = 'Técnico PRL';
+
+function buildEvalAutofill(
+  nombreTecnico: string | undefined,
+  prev: { evaluador: string; cargo: string },
+): { evaluador: string; cargo: string } | null {
+  const n = nombreTecnico?.trim();
+  if (!n || prev.evaluador.trim() || prev.cargo.trim()) {
+    return null;
+  }
+  return { evaluador: n, cargo: DEFAULT_EVALUATOR_CARGO };
+}
+
+function buildEvaluationSnapshot(
+  fd: {
+    workCenterId: string;
+    fecha: string;
+    evaluador: string;
+    cargo: string;
+    observaciones: string;
+    estado: string;
+  },
+  struct: StructureRiskAssignment[],
+  puestos: JobPositionRiskAssignment[],
+): string {
+  return JSON.stringify({
+    workCenterId: fd.workCenterId,
+    fecha: fd.fecha,
+    evaluador: fd.evaluador,
+    cargo: fd.cargo,
+    observaciones: fd.observaciones,
+    estado: fd.estado,
+    riesgosEstructura: struct,
+    riesgosPuestos: puestos,
+  });
+}
+
+type EvaluationFormBaselinePayload = {
+  workCenterId: string;
+  fecha: string;
+  evaluador: string;
+  cargo: string;
+  observaciones: string;
+  estado: string;
+  riesgosEstructura: StructureRiskAssignment[];
+  riesgosPuestos: JobPositionRiskAssignment[];
+};
 
 export function EvaluationForm() {
   const navigate = useNavigate();
+  const { setGuard } = useUnsavedEvaluationGuard();
+  const { user } = useAuth();
+  const { showInformationUI } = useUiPreferences();
   const { id: evaluationId } = useParams();
   const [searchParams] = useSearchParams();
   const centerId = searchParams.get('centerId');
@@ -32,17 +112,34 @@ export function EvaluationForm() {
   const [selectedCenter, setSelectedCenter] = useState<WorkCenter | null>(null);
   const [jobCategories, setJobCategories] = useState<JobPositionCategory[]>([]);
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    workCenterId: string;
+    fecha: string;
+    evaluador: string;
+    cargo: string;
+    observaciones: string;
+    estado: RiskEvaluation['estado'];
+  }>({
     workCenterId: centerId || '',
     fecha: new Date().toISOString().split('T')[0],
     evaluador: '',
     cargo: '',
     observaciones: '',
-    estado: 'en_progreso' as const,
+    estado: 'en_progreso',
   });
 
   const [riesgosEstructura, setRiesgosEstructura] = useState<StructureRiskAssignment[]>([]);
   const [riesgosPuestos, setRiesgosPuestos] = useState<JobPositionRiskAssignment[]>([]);
+
+  /** Línea base para detectar cambios sin guardar (null = aún no fijada, no bloquear). */
+  const [baselineSnapshot, setBaselineSnapshot] = useState<string | null>(null);
+  const newEvaluationIdRef = useRef<string | null>(null);
+  const prevCenterIdForBaselineRef = useRef<string | null>(null);
+  const isDirtyRef = useRef(false);
+  const [externalLeave, setExternalLeave] = useState<{
+    proceed: () => void;
+    reason: EvaluationLeaveReason;
+  } | null>(null);
 
   // Cargar centros y categorías al inicio
   useEffect(() => {
@@ -51,33 +148,31 @@ export function EvaluationForm() {
 
     const categories = getJobCategories();
     setJobCategories(categories);
-
-    console.log('📋 Centros y categorías cargados:', {
-      centros: centers.length,
-      categorias: categories.length,
-    });
   }, []);
 
-  // Cargar datos de la evaluación cuando estamos editando
+  // Cargar datos de la evaluación cuando estamos editando (incluye jobCategories para normalizar puestos)
   useEffect(() => {
     if (!isEditing || !evaluationId || workCenters.length === 0) {
       return;
     }
 
     const evaluations = getEvaluations();
-    const evaluation = evaluations.find(e => e.id === evaluationId);
+    const evaluation = evaluations.find((e) => e.id === evaluationId);
 
     if (evaluation) {
-      // Formatear fecha para input date (YYYY-MM-DD)
       const fechaFormateada = evaluation.fecha.split('T')[0];
+      const estadoNorm = normalizeEvaluationEstadoForForm(evaluation.estado);
+      const center = workCenters.find((c) => c.id === evaluation.workCenterId);
+      const tree = center?.estructuraJerarquica || [];
+      const positions = center?.puestosTrabajo || [];
 
-      console.log('🔵 Cargando evaluación para editar:', {
-        id: evaluation.id,
-        workCenter: evaluation.workCenterName,
-        workCenterId: evaluation.workCenterId,
-        riesgosEstructura: evaluation.riesgosEstructura?.length || 0,
-        riesgosPuestos: evaluation.riesgosPuestos?.length || 0,
-      });
+      const rawStruct = evaluation.riesgosEstructura || [];
+      const rawPuestos = evaluation.riesgosPuestos || [];
+      const puestosSincronizados = syncJobPositionGenericRisksWithCategories(
+        rawPuestos,
+        positions,
+        jobCategories,
+      );
 
       setFormData({
         workCenterId: evaluation.workCenterId,
@@ -85,29 +180,31 @@ export function EvaluationForm() {
         evaluador: evaluation.evaluador,
         cargo: evaluation.cargo,
         observaciones: evaluation.observaciones,
-        estado: evaluation.estado,
+        estado: estadoNorm,
       });
-      setRiesgosEstructura(evaluation.riesgosEstructura || []);
-      setRiesgosPuestos(evaluation.riesgosPuestos || []);
-
-      const center = workCenters.find(c => c.id === evaluation.workCenterId);
+      setRiesgosEstructura(
+        center ? enrichStructureRiskAssignments(tree, rawStruct) : rawStruct,
+      );
+      setRiesgosPuestos(
+        enrichJobPositionRiskAssignments(positions, jobCategories, puestosSincronizados),
+      );
       setSelectedCenter(center || null);
-
-      console.log('✅ Datos cargados correctamente:', {
-        centro: center?.nombre || 'No encontrado',
-        formData: {
-          workCenterId: evaluation.workCenterId,
-          fecha: fechaFormateada,
-          evaluador: evaluation.evaluador,
-          cargo: evaluation.cargo,
-        },
-        riesgosEstructura: evaluation.riesgosEstructura?.length || 0,
-        riesgosPuestos: evaluation.riesgosPuestos?.length || 0,
-      });
-    } else {
-      console.error('❌ No se encontró la evaluación con ID:', evaluationId);
+      setBaselineSnapshot(
+        buildEvaluationSnapshot(
+          {
+            workCenterId: evaluation.workCenterId,
+            fecha: fechaFormateada,
+            evaluador: evaluation.evaluador,
+            cargo: evaluation.cargo,
+            observaciones: evaluation.observaciones,
+            estado: estadoNorm,
+          },
+          center ? enrichStructureRiskAssignments(tree, rawStruct) : rawStruct,
+          enrichJobPositionRiskAssignments(positions, jobCategories, puestosSincronizados),
+        ),
+      );
     }
-  }, [isEditing, evaluationId, workCenters]);
+  }, [isEditing, evaluationId, workCenters, jobCategories]);
 
   // Manejar selección inicial cuando NO estamos editando
   useEffect(() => {
@@ -116,94 +213,304 @@ export function EvaluationForm() {
     }
 
     if (workCenters.length === 1 && !centerId) {
-      setFormData((prev) => ({ ...prev, workCenterId: workCenters[0].id }));
+      setFormData((prev) => {
+        const fill = buildEvalAutofill(user?.nombre, prev);
+        const wid = workCenters[0].id;
+        if (prev.workCenterId === wid && !fill) {
+          return prev;
+        }
+        return { ...prev, workCenterId: wid, ...(fill ?? {}) };
+      });
       setSelectedCenter(workCenters[0]);
     } else if (centerId) {
       const center = workCenters.find((c) => c.id === centerId);
       if (center) {
-        setFormData((prev) => ({ ...prev, workCenterId: centerId }));
+        setFormData((prev) => {
+          const fill = buildEvalAutofill(user?.nombre, prev);
+          if (prev.workCenterId === centerId && !fill) {
+            return prev;
+          }
+          return { ...prev, workCenterId: centerId, ...(fill ?? {}) };
+        });
         setSelectedCenter(center);
       }
+    } else {
+      setFormData((prev) => {
+        const fill = buildEvalAutofill(user?.nombre, prev);
+        if (!fill) {
+          return prev;
+        }
+        return { ...prev, ...fill };
+      });
     }
-  }, [centerId, workCenters, isEditing]);
+  }, [centerId, workCenters, isEditing, user?.nombre]);
+
+  // Línea base en evaluación nueva: al cambiar de centro (no en cada tecla)
+  useEffect(() => {
+    if (isEditing) {
+      return;
+    }
+    if (!selectedCenter) {
+      setBaselineSnapshot(null);
+      prevCenterIdForBaselineRef.current = null;
+      return;
+    }
+    if (prevCenterIdForBaselineRef.current !== selectedCenter.id) {
+      prevCenterIdForBaselineRef.current = selectedCenter.id;
+      setBaselineSnapshot(
+        buildEvaluationSnapshot(formData, riesgosEstructura, riesgosPuestos),
+      );
+    }
+  }, [isEditing, selectedCenter, formData, riesgosEstructura, riesgosPuestos]);
+
+  // Si la línea base se fijó sin evaluador/cargo y luego llega el usuario (autorrelleno), alinear baseline
+  useEffect(() => {
+    if (isEditing || !selectedCenter || baselineSnapshot === null) {
+      return;
+    }
+    let snap: EvaluationFormBaselinePayload;
+    try {
+      snap = JSON.parse(baselineSnapshot) as EvaluationFormBaselinePayload;
+    } catch {
+      return;
+    }
+    if (snap.workCenterId !== selectedCenter.id) {
+      return;
+    }
+    if (snap.evaluador || snap.cargo) {
+      return;
+    }
+    const ev = formData.evaluador?.trim();
+    const cg = formData.cargo?.trim();
+    if (!ev || !cg) {
+      return;
+    }
+    setBaselineSnapshot(buildEvaluationSnapshot(formData, riesgosEstructura, riesgosPuestos));
+  }, [
+    isEditing,
+    selectedCenter?.id,
+    baselineSnapshot,
+    formData,
+    riesgosEstructura,
+    riesgosPuestos,
+  ]);
 
   const handleCenterChange = (centerId: string) => {
     const center = workCenters.find((c) => c.id === centerId);
-    setFormData({ ...formData, workCenterId: centerId });
+    setFormData((prev) => {
+      const fill = buildEvalAutofill(user?.nombre, prev);
+      return { ...prev, workCenterId: centerId, ...(fill ?? {}) };
+    });
     setSelectedCenter(center || null);
-    // Limpiar asignaciones al cambiar de centro (solo en modo creación)
     if (!isEditing) {
       setRiesgosEstructura([]);
       setRiesgosPuestos([]);
+      newEvaluationIdRef.current = null;
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-
+  const persistEvaluation = useCallback((): boolean => {
     if (!formData.workCenterId) {
       toast.error('Selecciona un centro de trabajo');
-      return;
+      return false;
     }
 
     if (!formData.evaluador || !formData.cargo) {
       toast.error('Completa los campos del evaluador');
-      return;
+      return false;
     }
 
     if (riesgosEstructura.length === 0 && riesgosPuestos.length === 0) {
       toast.error('Debes asignar al menos un riesgo (ubicación o puesto)');
-      return;
+      return false;
     }
 
     const workCenter = workCenters.find((c) => c.id === formData.workCenterId);
-    if (!workCenter) return;
+    if (!workCenter) {
+      return false;
+    }
+
+    const id = isEditing
+      ? evaluationId!
+      : (newEvaluationIdRef.current ??= crypto.randomUUID());
 
     const evaluation: RiskEvaluation = {
-      id: isEditing ? evaluationId! : crypto.randomUUID(),
+      id,
       workCenterId: formData.workCenterId,
       workCenterName: workCenter.nombre,
       fecha: formData.fecha,
       evaluador: formData.evaluador,
       cargo: formData.cargo,
-      riesgos: [], // Mantener vacío para compatibilidad
+      riesgos: [],
       riesgosEstructura,
       riesgosPuestos,
       observaciones: formData.observaciones,
-      estado: formData.estado,
+      estado: normalizeEvaluationEstadoForForm(formData.estado),
     };
 
     saveEvaluation(evaluation);
     toast.success(isEditing ? 'Evaluación actualizada correctamente' : 'Evaluación guardada correctamente');
-    navigate('/evaluaciones');
-  };
-
-  const totalRiesgos = riesgosEstructura.length + riesgosPuestos.length;
-
-  // Debug: Log del estado actual en cada render
-  console.log('🔍 Estado actual del formulario:', {
+    // Aplicar baseline de forma síncrona para que useBlocker no intercepte el navigate() del submit
+    flushSync(() => {
+      setBaselineSnapshot(buildEvaluationSnapshot(formData, riesgosEstructura, riesgosPuestos));
+    });
+    return true;
+  }, [
     isEditing,
     evaluationId,
     formData,
-    selectedCenter: selectedCenter?.nombre || 'null',
-    riesgosEstructura: riesgosEstructura.length,
-    riesgosPuestos: riesgosPuestos.length,
-    totalRiesgos,
-  });
+    workCenters,
+    riesgosEstructura,
+    riesgosPuestos,
+  ]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!persistEvaluation()) {
+      return;
+    }
+    navigate('/evaluaciones');
+  };
+
+  const currentSnapshot = useMemo(
+    () => buildEvaluationSnapshot(formData, riesgosEstructura, riesgosPuestos),
+    [formData, riesgosEstructura, riesgosPuestos],
+  );
+
+  const isDirty =
+    baselineSnapshot !== null && currentSnapshot !== baselineSnapshot;
+
+  isDirtyRef.current = isDirty;
+
+  useEffect(() => {
+    setGuard({
+      isDirty: () => isDirtyRef.current,
+      requestLeave: (proceed, reason = 'default') => {
+        setExternalLeave({ proceed, reason });
+      },
+    });
+    return () => setGuard(null);
+  }, [setGuard]);
+
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) => {
+      if (!isDirty) {
+        return false;
+      }
+      return (
+        currentLocation.pathname !== nextLocation.pathname ||
+        currentLocation.search !== nextLocation.search ||
+        currentLocation.hash !== nextLocation.hash
+      );
+    },
+  );
+
+  useEffect(() => {
+    if (!isDirty) {
+      return;
+    }
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [isDirty]);
+
+  const handleBlockedSave = () => {
+    if (!persistEvaluation()) {
+      return;
+    }
+    if (blocker.state === 'blocked') {
+      blocker.proceed();
+    }
+  };
+
+  const handleBlockedCancel = () => {
+    if (blocker.state === 'blocked') {
+      blocker.reset();
+    }
+  };
+
+  const handleExternalLeaveSave = () => {
+    if (!persistEvaluation()) {
+      return;
+    }
+    const proceed = externalLeave?.proceed;
+    setExternalLeave(null);
+    proceed?.();
+  };
+
+  const handleExternalLeaveCancel = () => {
+    setExternalLeave(null);
+  };
+
+  const externalLeaveDescription: ReactNode =
+    externalLeave?.reason === 'logout' ? (
+      <>
+        Has modificado la evaluación. Si cierras sesión sin guardar, los cambios se perderán.
+        Puedes cancelar para seguir editando o guardar la evaluación antes de cerrar sesión.
+      </>
+    ) : (
+      <>
+        Has modificado la evaluación. Si continúas sin guardar, los cambios se perderán. Puedes
+        cancelar para seguir editando o guardar la evaluación antes de salir.
+      </>
+    );
+
+  const totalRiesgos = riesgosEstructura.length + riesgosPuestos.length;
+
+  const handleCancelToList = useCallback(() => {
+    if (baselineSnapshot !== null) {
+      try {
+        const snap = JSON.parse(baselineSnapshot) as EvaluationFormBaselinePayload;
+        flushSync(() => {
+          setFormData({
+            workCenterId: snap.workCenterId,
+            fecha: snap.fecha,
+            evaluador: snap.evaluador,
+            cargo: snap.cargo,
+            observaciones: snap.observaciones,
+            estado: normalizeEvaluationEstadoForForm(snap.estado),
+          });
+          setRiesgosEstructura(snap.riesgosEstructura ?? []);
+          setRiesgosPuestos(snap.riesgosPuestos ?? []);
+          setSelectedCenter(workCenters.find((w) => w.id === snap.workCenterId) ?? null);
+        });
+      } catch {
+        // ignore
+      }
+    } else if (!isEditing) {
+      flushSync(() => {
+        setFormData({
+          workCenterId: centerId || '',
+          fecha: new Date().toISOString().split('T')[0],
+          evaluador: '',
+          cargo: '',
+          observaciones: '',
+          estado: 'en_progreso',
+        });
+        setRiesgosEstructura([]);
+        setRiesgosPuestos([]);
+        setSelectedCenter(centerId ? (workCenters.find((c) => c.id === centerId) ?? null) : null);
+        newEvaluationIdRef.current = null;
+      });
+    }
+    navigate('/evaluaciones');
+  }, [baselineSnapshot, isEditing, workCenters, centerId, navigate]);
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="sm" onClick={() => navigate('/evaluaciones')}>
-          <ArrowLeft className="w-4 h-4" />
+      <div className="flex min-w-0 items-start gap-3 sm:items-center sm:gap-4">
+        <Button variant="ghost" size="sm" className="shrink-0" onClick={handleCancelToList}>
+          <ArrowLeft className="h-4 w-4" />
         </Button>
-        <div>
-          <h2 className="text-2xl font-semibold text-gray-900">
+        <div className="min-w-0">
+          <h2 className="text-xl font-semibold text-gray-900 sm:text-2xl">
             {isEditing ? 'Editar Evaluación de Riesgos' : 'Nueva Evaluación de Riesgos'}
           </h2>
-          <p className="text-gray-600 mt-1">
-            Asocia riesgos a ubicaciones y puestos de trabajo
-          </p>
+          <IfInformationUI>
+            <p className="mt-1 text-gray-600">Asocia riesgos a ubicaciones y puestos de trabajo</p>
+          </IfInformationUI>
         </div>
       </div>
 
@@ -280,23 +587,59 @@ export function EvaluationForm() {
                 rows={3}
               />
             </div>
+
+            <div className="space-y-3 rounded-lg border border-blue-100 bg-blue-50/60 p-4">
+              <Label className="text-base">Estado de la evaluación</Label>
+              <div className="flex justify-between gap-2 px-1 text-center">
+                <span
+                  className={`flex-1 rounded-md border px-2 py-1.5 text-xs font-semibold ${getStateColor('revision')}`}
+                >
+                  En revisión
+                </span>
+                <span
+                  className={`flex-1 rounded-md border px-2 py-1.5 text-xs font-semibold ${getStateColor('en_progreso')}`}
+                >
+                  En progreso
+                </span>
+                <span
+                  className={`flex-1 rounded-md border px-2 py-1.5 text-xs font-semibold ${getStateColor('completada')}`}
+                >
+                  Completada
+                </span>
+              </div>
+              <Slider
+                min={0}
+                max={2}
+                step={1}
+                value={[estadoToSliderIndex(formData.estado)]}
+                onValueChange={(v) => {
+                  const idx = v[0] ?? 1;
+                  setFormData({
+                    ...formData,
+                    estado: sliderIndexToEstado(idx),
+                  });
+                }}
+                className="w-full py-2"
+              />
+            </div>
           </CardContent>
         </Card>
 
         {/* Asignación de Riesgos */}
         {selectedCenter ? (
           <Tabs defaultValue="estructura" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="estructura">
-                Riesgos por Ubicación ({riesgosEstructura.length})
+            <TabsList className="grid h-auto w-full grid-cols-1 gap-1 p-1 sm:grid-cols-2">
+              <TabsTrigger value="estructura" className="whitespace-normal px-2 py-2 text-center text-xs sm:text-sm">
+                Ubicación ({riesgosEstructura.length})
               </TabsTrigger>
-              <TabsTrigger value="puestos">
-                Riesgos por Puesto ({riesgosPuestos.length})
+              <TabsTrigger value="puestos" className="whitespace-normal px-2 py-2 text-center text-xs sm:text-sm">
+                Puesto ({riesgosPuestos.length})
               </TabsTrigger>
             </TabsList>
 
             <TabsContent value="estructura" className="mt-6">
               <StructureRiskAssignmentComponent
+                key={isEditing ? evaluationId : 'new-eval'}
                 structureTree={selectedCenter.estructuraJerarquica || []}
                 assignments={riesgosEstructura}
                 onUpdate={setRiesgosEstructura}
@@ -305,10 +648,12 @@ export function EvaluationForm() {
 
             <TabsContent value="puestos" className="mt-6">
               <JobPositionRiskAssignmentComponent
+                key={isEditing ? evaluationId : 'new-eval'}
                 jobPositions={selectedCenter.puestosTrabajo || []}
                 jobCategories={jobCategories}
                 assignments={riesgosPuestos}
                 onUpdate={setRiesgosPuestos}
+                enableAutoGenericRisks={!isEditing}
               />
             </TabsContent>
           </Tabs>
@@ -322,32 +667,75 @@ export function EvaluationForm() {
 
         {/* Resumen y Acciones */}
         {selectedCenter && (
-          <Card className="bg-blue-50 border-blue-200">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm text-blue-900 font-medium">
-                    Total de Riesgos Identificados
-                  </div>
-                  <div className="text-3xl font-bold text-blue-600 mt-1">{totalRiesgos}</div>
-                  <div className="text-xs text-blue-700 mt-1">
-                    {riesgosEstructura.length} en ubicaciones • {riesgosPuestos.length} en puestos
+          <Card
+            className={
+              showInformationUI ? 'border-blue-200 bg-blue-50' : 'border border-gray-200 bg-white'
+            }
+          >
+            <CardContent className="space-y-4 pt-6">
+              {showInformationUI && (
+                <div className="flex flex-wrap items-end gap-4">
+                  <div>
+                    <div className="text-sm font-medium text-blue-900">
+                      Total de Riesgos Identificados
+                    </div>
+                    <div className="mt-1 text-3xl font-bold text-blue-600">{totalRiesgos}</div>
+                    <div className="mt-1 text-xs text-blue-700">
+                      {riesgosEstructura.length} en ubicaciones • {riesgosPuestos.length} en puestos
+                    </div>
                   </div>
                 </div>
-                <div className="flex gap-3">
-                  <Button type="button" variant="outline" onClick={() => navigate('/evaluaciones')}>
-                    Cancelar
-                  </Button>
-                  <Button type="submit" disabled={totalRiesgos === 0}>
-                    <Save className="w-4 h-4 mr-2" />
-                    {isEditing ? 'Actualizar Evaluación' : 'Guardar Evaluación'}
-                  </Button>
-                </div>
+              )}
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:justify-end">
+                <Button type="button" variant="outline" onClick={handleCancelToList}>
+                  Cancelar
+                </Button>
+                <Button type="submit" disabled={totalRiesgos === 0}>
+                  <Save className="mr-2 h-4 w-4" />
+                  {isEditing ? 'Actualizar Evaluación' : 'Guardar Evaluación'}
+                </Button>
               </div>
             </CardContent>
           </Card>
         )}
       </form>
+
+      <AlertDialog open={blocker.state === 'blocked'}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cambios sin guardar</AlertDialogTitle>
+            <AlertDialogDescription>
+              Has modificado la evaluación. Si sales de esta pantalla sin guardar, los cambios se
+              perderán. Puedes cancelar para seguir editando o guardar la evaluación antes de salir.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
+            <AlertDialogCancel type="button" onClick={handleBlockedCancel}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction type="button" onClick={handleBlockedSave}>
+              {isEditing ? 'Actualizar evaluación' : 'Guardar evaluación'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={externalLeave !== null}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cambios sin guardar</AlertDialogTitle>
+            <AlertDialogDescription>{externalLeaveDescription}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
+            <AlertDialogCancel type="button" onClick={handleExternalLeaveCancel}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction type="button" onClick={handleExternalLeaveSave}>
+              {isEditing ? 'Actualizar evaluación' : 'Guardar evaluación'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
