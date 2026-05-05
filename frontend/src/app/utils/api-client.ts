@@ -1,4 +1,15 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
+function resolveApiBaseUrl(): string {
+  const fromEnv = import.meta.env.VITE_API_URL;
+  if (typeof fromEnv === "string" && fromEnv.trim() !== "") {
+    return fromEnv.replace(/\/+$/, "");
+  }
+  if (import.meta.env.DEV) {
+    return "http://localhost:4000";
+  }
+  return "";
+}
+
+const API_BASE_URL = resolveApiBaseUrl();
 
 /** Códigos de error en POST /autenticacion/iniciar-sesion (recuperación admin). */
 export const AuthLoginErrorCode = {

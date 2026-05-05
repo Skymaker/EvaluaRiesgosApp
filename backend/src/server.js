@@ -8,7 +8,11 @@ import { Pool } from "pg";
 const app = express();
 const PORT = Number(process.env.PORT || 4000);
 const DATABASE_URL = process.env.DATABASE_URL;
-const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
+const _frontendOrigins = (process.env.FRONTEND_ORIGIN || "http://localhost:5173")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+const FRONTEND_ORIGINS = _frontendOrigins.length > 0 ? _frontendOrigins : ["http://localhost:5173"];
 const HORAS_EXPIRACION_SESION = 24;
 const APP_PUBLIC_NAME = process.env.APP_PUBLIC_NAME || "Sistema de Evaluación de Riesgos";
 
@@ -93,7 +97,7 @@ if (!DATABASE_URL) {
 
 const pool = new Pool({ connectionString: DATABASE_URL });
 
-app.use(cors({ origin: FRONTEND_ORIGIN, credentials: true }));
+app.use(cors({ origin: FRONTEND_ORIGINS, credentials: true }));
 app.use(express.json({ limit: "10mb" }));
 
 const rolesValidos = new Set(["administrador", "administrativo", "tecnico"]);
