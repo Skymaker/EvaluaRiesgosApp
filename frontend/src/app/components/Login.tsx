@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { LogIn, AlertCircle, Mail } from 'lucide-react';
 import { Alert, AlertDescription } from './ui/alert';
@@ -16,7 +16,7 @@ const LOGIN_INFO_ALERT_CODES = new Set<string>([
 
 export function Login() {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, isAuthenticated, logout } = useAuth();
   const [formData, setFormData] = useState({
     username: '',
     password: '',
@@ -24,6 +24,15 @@ export function Login() {
   const [error, setError] = useState('');
   const [infoMessage, setInfoMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const hasCheckedInitialAuth = useRef(false);
+
+  useEffect(() => {
+    if (hasCheckedInitialAuth.current) return;
+    hasCheckedInitialAuth.current = true;
+    if (isAuthenticated) {
+      logout();
+    }
+  }, [isAuthenticated, logout]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

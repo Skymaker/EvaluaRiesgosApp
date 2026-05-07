@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User } from '../types';
-import { getCurrentUser, logout as logoutUser } from '../utils/auth-storage';
+import { getCurrentUser, logout as logoutUser, terminateSessionOnPageLeave } from '../utils/auth-storage';
 
 interface AuthContextType {
   user: User | null;
@@ -18,6 +18,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const currentUser = getCurrentUser();
     setUser(currentUser);
+  }, []);
+
+  useEffect(() => {
+    const handlePageLeave = () => {
+      terminateSessionOnPageLeave();
+    };
+
+    window.addEventListener('pagehide', handlePageLeave);
+    window.addEventListener('beforeunload', handlePageLeave);
+
+    return () => {
+      window.removeEventListener('pagehide', handlePageLeave);
+      window.removeEventListener('beforeunload', handlePageLeave);
+    };
   }, []);
 
   const login = (user: User) => {

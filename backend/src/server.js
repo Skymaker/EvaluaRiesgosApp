@@ -288,11 +288,12 @@ app.get("/health", async (_req, res) => {
 
 app.post("/autenticacion/iniciar-sesion", async (req, res) => {
   const { username, password } = req.body ?? {};
-  if (!username || !password) {
+  const normalizedUsername = typeof username === "string" ? username.trim() : "";
+  if (!normalizedUsername || !password) {
     return res.status(400).json({ message: "Usuario y contraseña son obligatorios" });
   }
 
-  const result = await pool.query("select * from usuarios where nombre_usuario = $1 limit 1", [username]);
+  const result = await pool.query("select * from usuarios where nombre_usuario = $1 limit 1", [normalizedUsername]);
   const user = result.rows[0];
   if (!user) return res.status(401).json({ message: "Usuario no encontrado" });
   if (user.esta_bloqueado) return res.status(403).json({ message: "Usuario bloqueado" });
@@ -379,7 +380,14 @@ app.post("/autenticacion/iniciar-sesion", async (req, res) => {
 });
 
 app.post("/autenticacion/cerrar-sesion", async (req, res) => {
-  const token = req.headers["x-session-token"];
+  const headerToken = req.headers["x-session-token"];
+  const bodyToken = req.body?.token;
+  const token =
+    typeof headerToken === "string" && headerToken.length > 0
+      ? headerToken
+      : typeof bodyToken === "string" && bodyToken.length > 0
+        ? bodyToken
+        : null;
   if (token && typeof token === "string") {
     await pool.query("delete from sesiones where token = $1", [token]);
   }

@@ -1,5 +1,5 @@
 import { User } from '../types';
-import { apiRequest, ApiError, setSessionToken } from './api-client';
+import { apiRequest, ApiError, getApiBaseUrl, setSessionToken } from './api-client';
 
 let usersCache: User[] = [];
 let currentUserCache: User | null = null;
@@ -66,9 +66,10 @@ export const login = async (
   code?: string;
 }> => {
   try {
+    const normalizedUsername = username.trim();
     const result = await apiRequest('/autenticacion/iniciar-sesion', {
       method: 'POST',
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ username: normalizedUsername, password }),
     });
 
     if (!result?.user || !result?.sessionToken) {
@@ -94,6 +95,31 @@ export const login = async (
 
 export const logout = (): void => {
   void apiRequest('/autenticacion/cerrar-sesion', { method: 'POST' }).catch(() => undefined);
+  setSessionToken(null);
+  currentUserCache = null;
+};
+
+export const terminateSessionOnPageLeave = (): void => {
+  const token = getSessionToken();
+  if (!token) return;
+  const logoutUrl = `${getApiBaseUrl()}/autenticacion/cerrar-sesion`;
+
+  try {
+    const payload = JSON.stringify({ token });
+    const blob = new Blob([payload], { type: 'application/json' });
+    navigator.sendBeacon(logoutUrl, blob);
+  } catch {
+    void fetch(logoutUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-session-token': token,
+      },
+      body: JSON.stringify({ token }),
+      keepalive: true,
+    }).catch(() => undefined);
+  }
+
   setSessionToken(null);
   currentUserCache = null;
 };

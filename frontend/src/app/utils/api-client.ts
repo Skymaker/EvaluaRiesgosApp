@@ -10,6 +10,7 @@ function resolveApiBaseUrl(): string {
 }
 
 const API_BASE_URL = resolveApiBaseUrl();
+export const getApiBaseUrl = () => API_BASE_URL;
 
 /** Códigos de error en POST /autenticacion/iniciar-sesion (recuperación admin). */
 export const AuthLoginErrorCode = {
